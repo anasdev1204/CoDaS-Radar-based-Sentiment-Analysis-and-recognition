@@ -1,0 +1,13 @@
+numpy
+pandas
+scikit-learn
+tqdm
+pyts
+scikit-image
+matplotlib
+seaborn
+torch
+torchvision
+h5py
+natsort
+tomli
