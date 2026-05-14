@@ -1,18 +1,20 @@
 import os
 import pickle
 from colorsys import hsv_to_rgb
+from copy import deepcopy
 from glob import glob
 
 import numpy as np
 
 class RadarData:
+    # +z is above
+
     # "RF-Behavior/Radar/C1/U03/M08/01/" # "swipe-left"       # suggests that +y = left
     # "RF-Behavior/Radar/C1/U01/M15/03/" # "left-arm-circle"  # suggests that +y = left
     # "RF-Behavior/Radar/C1/U05/M07/01/" # "swipe-right"      # suggests that -y = right
     # "RF-Behavior/Radar/C1/U03/M16/01/" # "right-arm-circle" # suggests that -y = right
     # "RF-Behavior/Radar/C1/U01/M06/01/" # "lateral-to-front" # suggests that +x = front
     # "RF-Behavior/Radar/C1/U03/M11/01/" # "two-hand-throw"   # suggests that +x = front
-    # +z is above
 
     def __init__(self, points, radar_ids, timestamps):
         self.points = points
@@ -71,8 +73,10 @@ class RadarData:
         points = [np.array(points[i]) for i in new_timestamps]
         radars = [radars[i] for i in new_timestamps]
         if not int_time:
-            new_timestamps = start + np.array(new_timestamps) / fps
-            start, fps = None, None
+            # new_timestamps = start + np.array(new_timestamps) / fps
+            # start, fps = None, None
+            new_timestamps = np.array(new_timestamps) / fps
+            fps=None
         rd = RadarData(points, radars, new_timestamps)
         rd.start = start
         rd.fps = fps
@@ -85,6 +89,33 @@ class RadarData:
             fps = cls.mean_fps(timestamps)
         start = min(timestamps)
         return start, ((np.array(timestamps) - start) * fps).astype(int)
+
+    def pad(self, min_density=None, max_points=None):
+        if min_density is None:
+            actual_max_points = max(len(p) for p in self.points)
+        else:
+            actual_max_points = max((d[:, -1]>min_density).sum() for d in self.points)
+        max_points = max(max_points or 0, actual_max_points)
+
+        points, r_ids = [], []
+        for p, r in zip(self.points, self.radar_ids):
+            if min_density is None:
+                pad_width = max_points - len(p)
+            else:
+                mask = p[:, -1]>min_density
+                pad_width = max_points - mask.sum()
+                p = p[mask]
+                r = [r[i] for i in range(len(p)) if mask[i]]
+
+            if len(p) > 0:
+                points.append(p.tolist() + [(0,0,0,0)]*pad_width)
+                r_ids.append(r + [None]*pad_width)
+
+        rd = deepcopy(self)
+        rd.points = points
+        rd.radar_ids = r_ids
+        return rd
+
 
     @staticmethod
     def mean_fps(timestamps):
