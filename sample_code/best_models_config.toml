@@ -1,0 +1,57 @@
+selection_rule = "window_acc, louo_acc_std"
+source = "merged_results_final.csv"
+
+[imu]
+modality = "IMU"
+kind = "svm"
+base_tag = "IMU_win6s_overlap75"
+window = 6
+overlap = 75
+
+[imu.metrics]
+acc = 0.5748061101438222
+window_acc = 0.5962200727584812
+louo_acc_std = 0.1492784665772639
+user_acc = 0.7727272727272727
+
+[imu.params]
+C = 5.0
+kernel = "rbf"
+gamma = "scale"
+
+[infrared]
+modality = "INFRARED"
+kind = "rf"
+base_tag = "win4s_overlap25"
+window = 4
+overlap = 25
+
+[infrared.metrics]
+acc = 0.6147299007634204
+window_acc = 0.6413897579929713
+louo_acc_std = 0.2027318000589204
+user_acc = 0.9565217391304348
+
+[infrared.params]
+n_estimators = 100
+max_depth = 200
+min_samples_split = 30
+min_samples_leaf = 5
+
+[radar]
+modality = "RADAR"
+kind = "svm"
+base_tag = "win8s_overlap75"
+window = 8
+overlap = 75
+
+[radar.metrics]
+acc = 0.5646925656344159
+window_acc = 0.6125576589310286
+louo_acc_std = 0.0733840326026697
+user_acc = 0.8695652173913043
+
+[radar.params]
+C = 5.0
+kernel = "rbf"
+gamma = "scale"
