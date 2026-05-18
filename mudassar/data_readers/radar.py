@@ -25,7 +25,7 @@ class RadarData:
         self.fps = None
 
     @classmethod
-    def read_from_path(cls, path:str, transform=True, normalize=False):
+    def read_from_path(cls, path: str, transform=True, normalize=False):
         pickles = cls.read_pickles(path)
         points, rids, timestamps = [], [], []
         for r_id, pkl in pickles.items():
@@ -38,7 +38,7 @@ class RadarData:
                             coordinates = cls.normalize(coordinates)
                     points.append(coordinates)
                     rids.append([r_id for _ in range(len(frame))])
-                    timestamps.append(frame[0,0])
+                    timestamps.append(frame[0, 0])
         rd = RadarData(points, rids, timestamps)
         rd.path = path
         return rd
@@ -56,15 +56,15 @@ class RadarData:
             raise ValueError(f"No files found at '{path}'")
         for file in files:
             with open(file, "rb") as f:
-                pickles[int(os.path.basename(file).split('.')[0])] = pickle.load(f)
+                pickles[int(os.path.basename(file).split(".")[0])] = pickle.load(f)
         return pickles
 
     def bin(self, fps=10, int_time=False):
-        if fps is None or fps <=0:
+        if fps is None or fps <= 0:
             fps = self.mean_fps(self.timestamps)
         start, bins = self.make_time_bins(self.timestamps, fps=fps)
-        points = [[] for _ in range(bins.max()+1)]
-        radars = [[] for _ in range(bins.max()+1)]
+        points = [[] for _ in range(bins.max() + 1)]
+        radars = [[] for _ in range(bins.max() + 1)]
         for p, r, b in zip(self.points, self.radar_ids, bins):
             points[b].extend(p.tolist())
             radars[b].extend(r)
@@ -76,7 +76,7 @@ class RadarData:
             # new_timestamps = start + np.array(new_timestamps) / fps
             # start, fps = None, None
             new_timestamps = np.array(new_timestamps) / fps
-            fps=None
+            fps = None
         rd = RadarData(points, radars, new_timestamps)
         rd.start = start
         rd.fps = fps
@@ -85,7 +85,7 @@ class RadarData:
 
     @classmethod
     def make_time_bins(cls, timestamps, fps=10):
-        if fps is None or fps <=0:
+        if fps is None or fps <= 0:
             fps = cls.mean_fps(timestamps)
         start = min(timestamps)
         return start, ((np.array(timestamps) - start) * fps).astype(int)
@@ -94,7 +94,7 @@ class RadarData:
         if min_density is None:
             actual_max_points = max(len(p) for p in self.points)
         else:
-            actual_max_points = max((d[:, -1]>min_density).sum() for d in self.points)
+            actual_max_points = max((d[:, -1] > min_density).sum() for d in self.points)
         max_points = max(max_points or 0, actual_max_points)
 
         points, r_ids = [], []
@@ -102,52 +102,82 @@ class RadarData:
             if min_density is None:
                 pad_width = max_points - len(p)
             else:
-                mask = p[:, -1]>min_density
+                mask = p[:, -1] > min_density
                 pad_width = max_points - mask.sum()
                 p = p[mask]
                 r = [r[i] for i in range(len(p)) if mask[i]]
 
             if len(p) > 0:
-                points.append(p.tolist() + [(0,0,0,0)]*pad_width)
-                r_ids.append(r + [None]*pad_width)
+                points.append(p.tolist() + [(0, 0, 0, 0)] * pad_width)
+                r_ids.append(r + [None] * pad_width)
 
         rd = deepcopy(self)
         rd.points = points
         rd.radar_ids = r_ids
         return rd
 
+    def animate(self, fps=10, **kwargs):
+        rd = self
+        if rd.start is None:
+            rd = rd.bin(fps=fps)
+        rd = rd.pad(min_density=kwargs.get("min_density"), max_points=kwargs.get("max_points"))
+        points = np.array(rd.points)[:, :, :3]
+        print(points.shape)
+        scatter_colors = [[(RadarData.COLORS[i] if i is not None else (0, 0, 0, 0)) for i in r] for r in rd.radar_ids]
+
+        from .visualize import MatPlot3D
+        import matplotlib.pyplot as plt
+        anim = MatPlot3D.animate(points, scatter_colors=scatter_colors, **kwargs)
+        plt.close()
+        return anim
+
+    def show(self, fps=10, vertical_axis="z", azimuth=10, elevation=20, **kwargs):
+        from IPython.display import HTML, display
+
+        display(HTML(self.animate(
+            fps=fps, vertical_axis=vertical_axis, azimuth=azimuth, elevation=elevation, **kwargs
+        ).to_jshtml(fps=fps)))
 
     @staticmethod
     def mean_fps(timestamps):
-        return 1/ np.diff(np.sort(timestamps)).mean()
+        return 1 / np.diff(np.sort(timestamps)).mean()
 
     @classmethod
     def normalize(cls, points):
-         return (points - cls.MEANS) / cls.STDS
+        return (points - cls.MEANS) / cls.STDS
 
-    MEANS = np.array([ 0.032089453582,  0.265011873078,  1.821485130146, 17.835674109973])
-    STDS = np.array([1.21536512212 , 2.157523648347, 1.260789705373, 6.055741740021])
+    MEANS = np.array([0.032089453582, 0.265011873078, 1.821485130146, 17.835674109973])
+    STDS = np.array([1.21536512212, 2.157523648347, 1.260789705373, 6.055741740021])
 
     @classmethod
-    def transform(cls, points: np.ndarray, radar_id:int):
+    def transform(cls, points: np.ndarray, radar_id: int):
         if radar_id <= 4:
             transformed = cls.ceiling_transform(points, cls.CEILING_TRANSLATIONS[radar_id])
         else:
-            transformed = cls.ground_transform_factory(cls.GROUND_THETA_DEGS[radar_id - 5])(points, cls.GROUND_TRANSLATIONS[radar_id - 5])
+            transformed = cls.ground_transform_factory(cls.GROUND_THETA_DEGS[radar_id - 5])(
+                points, cls.GROUND_TRANSLATIONS[radar_id - 5]
+            )
         return np.concatenate([transformed, points[:, -1:]], axis=-1)
 
     CEILING_TRANSLATIONS = [
-        np.array([-2,  4, 5]), np.array([2,  4, 5]), np.array([0, 0, 5]),
-        np.array([-2, -4, 5]), np.array([2, -4, 5])
+        np.array([-2, 4, 5]),
+        np.array([2, 4, 5]),
+        np.array([0, 0, 5]),
+        np.array([-2, -4, 5]),
+        np.array([2, -4, 5]),
     ]
     GROUND_THETA_DEGS = [180, 135, 90, 45, 0, -45, -90, -135]
     GROUND_TRANSLATIONS = [
-        np.array([1.5, 0, 1.3]), np.array([1.06, -1.06, 1.3]),
-        np.array([0, -1.5, 1.3]), np.array([-1.06, -1.06, 1.3]),
-        np.array([-1.5, 0, 1.3]), np.array([-1.06, 1.06, 1.3]),
-        np.array([0, 1.5, 1.3]), np.array([1.06, 1.06, 1.3])
+        np.array([1.5, 0, 1.3]),
+        np.array([1.06, -1.06, 1.3]),
+        np.array([0, -1.5, 1.3]),
+        np.array([-1.06, -1.06, 1.3]),
+        np.array([-1.5, 0, 1.3]),
+        np.array([-1.06, 1.06, 1.3]),
+        np.array([0, 1.5, 1.3]),
+        np.array([1.06, 1.06, 1.3]),
     ]
-    COLORS = [hsv_to_rgb(i/13, 1, 1) for i in range(13)]
+    COLORS = [hsv_to_rgb(i / 13, 1, 1) for i in range(13)]
 
     # --- Specific Math Logic for Ground ---
     @staticmethod
@@ -155,11 +185,7 @@ class RadarData:
         """Returns a transformation function locked to a specific angle."""
         theta_rad = np.deg2rad(deg)
         # Pre-calculate R matrix
-        R = np.array([
-            [np.cos(theta_rad), -np.sin(theta_rad), 0],
-            [np.sin(theta_rad), np.cos(theta_rad), 0],
-            [0, 0, 1]
-        ])
+        R = np.array([[np.cos(theta_rad), -np.sin(theta_rad), 0], [np.sin(theta_rad), np.cos(theta_rad), 0], [0, 0, 1]])
 
         def transform(points, translation):
             # Apply rotation then translation
@@ -174,13 +200,14 @@ class RadarData:
     def ceiling_transform(points, translation):
         # Logic from original script: z = -points[:,0], y = points[:,1], x = points[:,2]
         z = -points[:, 0]
-        y =  points[:, 1]
-        x =  points[:, 2]
+        y = points[:, 1]
+        x = points[:, 2]
 
         return np.stack([x, y, z], axis=1) + translation
 
+
 if __name__ == "__main__":
     path = "./RF-Behavior/Radar/C2/U01/A02/01/"
-    rd = RadarData.read_from_path(path)
-    rdb = rd.bin(fps=10, int_time=True)
-    print(len(rdb.points), len(rdb.radar_ids), len(rdb.timestamps),rdb.timestamps, rdb.fps)
+    rd_ = RadarData.read_from_path(path)
+    rdb = rd_.bin(fps=10, int_time=True)
+    print(len(rdb.points), len(rdb.radar_ids), len(rdb.timestamps), rdb.timestamps, rdb.fps)

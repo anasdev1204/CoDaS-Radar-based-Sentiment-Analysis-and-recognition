@@ -33,7 +33,7 @@ class InfraredData:
         if not os.path.isfile(path):
             raise ValueError(f"No file found at '{path}'")
 
-        df1 = pd.read_csv(path, skiprows=[0,1,2,4], nrows=3, header=None)
+        df1 = pd.read_csv(path, skiprows=[0, 1, 2, 4], nrows=3, header=None)
         df2 = pd.read_csv(path, skiprows=7, header=None)
         columns = df1.iloc[0].fillna("") + "_" + df1.iloc[1].fillna("") + "_" + df1.iloc[2].fillna("")
         df = df2.rename(columns=columns)
@@ -43,6 +43,42 @@ class InfraredData:
         return df
         # campaign = os.path.normpath(path).split(os.sep)[-4]
         # return cls.fix_column_names(df, campaign)
+
+    def animate(self, step=12, max_frames=2000, **kwargs):
+        points = self.landmarks[:max_frames:step, :, :3]
+        print(points.shape)
+
+        connections = [(0, 1), (0, 2), (0, 3), (3, 4), (3, 5)][: points.shape[1] - 1]
+        line_labels = ["LeftArm", "RightArm", "torso", "LeftLeg", "RightLeg"][: points.shape[1] - 1]
+        line_colors = ["magenta", "cyan", "black", "red", "blue"][: points.shape[1] - 1]
+        scatter_color = ["lawngreen", "darkmagenta", "darkcyan", "darkolivegreen", "darkred", "darkblue"][: points.shape[1]]
+
+        from .visualize import MatPlot3D
+        import matplotlib.pyplot as plt
+
+        anim = MatPlot3D.animate(
+            points,
+            line_indexes=connections,
+            line_labels=line_labels,
+            line_colors=line_colors,
+            scatter_colors=[scatter_color] * len(points),
+            **kwargs,
+        )
+        plt.close()
+        return anim
+
+    def show(self, step=12, max_frames=2000, scatter_size=10, vertical_axis="y", azimuth=40, elevation=10, **kwargs):
+        from IPython.display import display, HTML
+
+        display(HTML(self.animate(
+            step=step,
+            max_frames=max_frames,
+            scatter_size=scatter_size,
+            vertical_axis=vertical_axis,
+            azimuth=azimuth,
+            elevation=elevation,
+            **kwargs,
+        ).to_jshtml(fps=round(100 / step))))
 
     @staticmethod
     def transform(landmarks: np.ndarray):
@@ -69,4 +105,3 @@ class InfraredData:
         for coord in coords
     ]
     TIMESTAMP_COLUMN = "Name__Time (Seconds)"
-
