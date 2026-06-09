@@ -162,7 +162,7 @@ class RotaryPositionalEmbeddings(torch.nn.Module):
             the rotation angles
     """
 
-    def __init__(self, dim: int, max_seq_len: int = 2**14, base: int = 10_000, dtype=torch.bfloat16) -> None:
+    def __init__(self, dim: int, max_seq_len: int = 2**12, base: int = 10_000, dtype=torch.bfloat16) -> None:
         super().__init__()
         self.dim = dim
         self.base = base

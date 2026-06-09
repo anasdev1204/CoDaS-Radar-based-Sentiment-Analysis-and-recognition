@@ -33,8 +33,8 @@ class PointCloudEncoder(torch.nn.Module):
             x = x + self.positional_encodings[..., :x.shape[-2], :]
             # print("after adding positional encodings shape:", x.shape)
         # print("CLS shape:", self.CLS.shape)
-        # print("CLS .expand shape:", self.CLS.expand(x.shape[0], -1, -1).shape)
-        x = torch.cat([self.CLS.expand(x.shape[0], -1, -1), x], dim=-2)
+        # print("CLS .expand shape:", self.CLS.expand(*x.shape[:-2], -1, -1).shape)
+        x = torch.cat([self.CLS.expand(*x.shape[:-2], -1, -1), x], dim=-2)
         # print("after CLS shape:", x.shape)
         for block in self.blocks:
             x, _ = block(x)
@@ -87,7 +87,7 @@ class TemporalDecoder(torch.nn.Module):
             if isinstance(timestamps, np.ndarray):
                 timestamps = torch.from_numpy(timestamps).to(x.device)
             pos_ids = self.time_to_pos_ids(timestamps)
-            pos_ids = torch.cat([pos_ids, pos_ids[-1:]+1], dim=-1)
+            pos_ids = torch.cat([pos_ids, pos_ids[..., -1:]+1], dim=-1)  # maybe change to [pos_ids+1, pos_ids[:1]] if LM loss is used
             # print("position ids:", pos_ids)
         preserved_indexes = torch.arange(x.shape[-2], device=x.device)
         for block in self.blocks:
@@ -106,9 +106,9 @@ class TemporalDecoder(torch.nn.Module):
         )
 
     def time_to_pos_ids(self, timestamps:torch.Tensor):
-        return (timestamps/self.MAX_TIMESTAMP_SECONDS * (getattr(self.blocks[0].attn.rope, "max_seq_len", 2**14)-1)).long()
+        return (timestamps/self.MAX_TIMESTAMP_SECONDS * (getattr(self.blocks[0].attn.rope, "max_seq_len", 2**12)-1)).long()
 
-    MAX_TIMESTAMP_SECONDS = 400
+    MAX_TIMESTAMP_SECONDS = 40
 
     @property
     def device(self):
@@ -130,14 +130,51 @@ class ContrastiveModalityPairsModel(torch.nn.Module):
         self.type(dtype)
 
     def forward(self, x:torch.Tensor, timestamps=None, return_last_hidden_states=False):
+        """
+        Args:
+            x (torch.Tensor): shape=(batch, time, points, features)
+            timestamps (torch.Tensor, optional): shape=(batch, time). Defaults to None.
+            return_last_hidden_states (bool, optional): _description_. Defaults to False.
+
+        Returns:
+            TemporalDecoderOutput: namedtuple.attributes=[embedding, inputs, last_hidden_states, preserved_indexes]
+        """
         if isinstance(x, np.ndarray):
             x = torch.from_numpy(x)
         if isinstance(x, torch.Tensor):
+            # print(f"[uniform input {x.shape}]", end=" ")
+            while x.ndim < 4:
+                x = x.unsqueeze(0)
+            # print(f"[unsqueezed input {x.shape}]", end=" ")
             x = self.frame_model(x.type(self.dtype).to(self.device))
+            # print(f"[output {x.shape}]")
+
         elif isinstance(x, list):
-            x = [(torch.from_numpy(t) if isinstance(t, np.ndarray) else torch.tensor(t)) for t in x]
-            x = [self.frame_model(t.type(self.dtype).to(self.device)) for t in x]
-            x = torch.cat(x, dim=-2)
+            # print(f"jagged input with {len(x)} sequences", end=" | ")
+            ## assuming only `num_points` dimension (dim=-2) is variable
+            if (not isinstance(x[0], list)) and isinstance(x[0], (np.ndarray, torch.Tensor)) and x[0].ndim == 2:
+                x = [x]  # batch dimension
+                # print(f"added batch dimension", end=" | ")
+
+            # print(f"frames in each sequence: {[len(seq) for seq in x]}", end=" | ")
+            buckets = {}
+            for b, seq in enumerate(x):
+                for t, frame in enumerate(seq):
+                    buckets.setdefault(len(frame), {"frames": [], "indexes": []})
+                    buckets[len(frame)]["frames" ].append(frame)
+                    buckets[len(frame)]["indexes"].append((b, t))
+            x_new = [[None for _ in range(len(seq))] for seq in x]
+            # print(f"created {len(buckets)} buckets based on frame lengths", end=" | ")
+            # print(f"bucket sizes: {sorted([(n,len(bucket['frames'])) for n,bucket in buckets.items()], key=lambda x: x[-1])}", end=" | ")
+            for bucket in buckets.values():
+                bucket["frames"] = [(torch.from_numpy(f) if isinstance(f, np.ndarray) else torch.tensor(f)) for f in bucket["frames"]]
+                bucket["frames"] = torch.stack(bucket["frames"]).type(self.dtype).to(self.device)
+                bucket["frames"] = self.frame_model(bucket["frames"])
+                for frame, (b, t) in zip(bucket["frames"], bucket["indexes"]):
+                    x_new[b][t] = frame
+            # print(x_new)
+            x = torch.stack([torch.stack(seq) for seq in x_new]).contiguous()
+            # print("after frame_model shape:", x.shape)
 
         x = self.time_model(x.squeeze(-2), timestamps=timestamps, return_last_hidden_states=return_last_hidden_states)
         return x
@@ -145,11 +182,11 @@ class ContrastiveModalityPairsModel(torch.nn.Module):
     @property
     def device(self):
         return self.frame_model.device
-    
+
     @property
     def dtype(self):
         return self.frame_model.dtype
-    
+
     @property
     def n_params(self):
         return sum(p.numel() for p in self.parameters())

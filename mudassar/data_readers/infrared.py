@@ -44,6 +44,10 @@ class InfraredData:
         # campaign = os.path.normpath(path).split(os.sep)[-4]
         # return cls.fix_column_names(df, campaign)
 
+    @property
+    def n_frames(self):
+        return len(self.landmarks)
+
     def animate(self, step=12, max_frames=2000, **kwargs):
         points = self.landmarks[:max_frames:step, :, :3]
         print(points.shape)

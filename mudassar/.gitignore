@@ -1,2 +1,4 @@
 *.pt
+*.pth
 temp_*.ipynb
+*.csv

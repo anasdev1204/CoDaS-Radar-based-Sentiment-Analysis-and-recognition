@@ -116,6 +116,10 @@ class RadarData:
         rd.radar_ids = r_ids
         return rd
 
+    @property
+    def n_frames(self):
+        return len(self.points)
+
     def animate(self, fps=10, **kwargs):
         rd = self
         if rd.start is None:
