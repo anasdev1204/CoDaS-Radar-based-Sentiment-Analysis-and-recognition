@@ -21,20 +21,20 @@ class AttentionBlock(torch.nn.Module):
 
         self.type(dtype)
 
-    def forward(self, x, position_ids=None):
+    def forward(self, x, position_ids=None, pruning_mask=None):
         # print("======= attention block forward =======")
         # print("input shape:", x.shape)
         if x.ndim == 2:
             x = x.unsqueeze(0)
         # print("unsqueezed shape:", x.shape)
         x = self.layer_norm(x)
-        x = self.attend(x, position_ids=position_ids)
+        x = self.attend(x, position_ids=position_ids, pruning_mask=pruning_mask)
         x = self.out_proj(x)
         # print("output shape:", x.shape)
         # print("======= END attention block forward =======")
         return x
 
-    def attend(self, x: torch.Tensor, position_ids=None):
+    def attend(self, x: torch.Tensor, position_ids=None, pruning_mask=None):
         # print("pre attention shape:", x.shape)
         rest, S, E = x.shape[:-2], x.shape[-2], x.shape[-1]
         qkv = self.qkv_proj(x)
@@ -66,7 +66,12 @@ class AttentionBlock(torch.nn.Module):
         k = k.permute(*permute_order).contiguous()
         v = v.permute(*permute_order).contiguous()
         # print("q shape:", q.shape, "k shape:", k.shape, "v shape:", v.shape)
-
+        if pruning_mask is not None:
+            q = q[..., pruning_mask, :]
+            # print("after pruning q shape:", q.shape)
+            # print("S=" , S)
+            S = q.shape[-2]
+            # print("S=" , S)
         x = torch.nn.functional.scaled_dot_product_attention(q, k, v, dropout_p=self.dropout_p, is_causal=self.causal, enable_gqa=True)
         # print("attn output shape:", x.shape)
         x = x.permute(*permute_order).contiguous()
@@ -90,14 +95,15 @@ class TransformerBlock(torch.nn.Module):
         self.type(dtype)
 
     def forward(self, x, position_ids=None):
-        x = jagged_residual(x, self.attn(x, position_ids=position_ids))
-
         # prune the sequence length
         n_preserved = self.pruning_n_preserved if self.pruning_n_preserved is not None else max(self.pruning_frac_min_preserved, int(x.shape[-2] * self.pruning_preserve_frac))
         mask = make_pruning_mask(n_preserved, x.shape[-2], preserved_end=self.pruning_preserved_end, is_training=self.training)
         # print(mask.numpy().astype(int))
         # print(mask.shape, x.shape)
-        x = x[..., mask, :]
+
+        x = jagged_residual(x[..., mask, :], self.attn(x, position_ids=position_ids, pruning_mask=mask))
+
+        # x = x[..., mask, :]
 
         x = x + self.mlp(x)
         return x, mask

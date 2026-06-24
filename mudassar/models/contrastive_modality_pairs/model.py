@@ -175,6 +175,26 @@ class ContrastiveModalityPairsModel(torch.nn.Module):
             # print(x_new)
             x = torch.stack([torch.stack(seq) for seq in x_new]).contiguous()
             # print("after frame_model shape:", x.shape)
+        elif isinstance(x, tuple) and all(isinstance(elem, (np.ndarray, torch.Tensor)) and elem.ndim==3 for elem in x):
+            # print("before", len(x), {tuple(elem.shape) for elem in x})
+            # x = torch.stack([self.frame_model(seq.type(self.dtype).to(self.device)) for seq in x]).contiguous()
+            buckets = {}
+            for b, seq in enumerate(x):
+                buckets.setdefault(seq.shape[-2], {"seqs": [], "indexes": []})
+                buckets[seq.shape[-2]]["seqs"   ].append(seq)
+                buckets[seq.shape[-2]]["indexes"].append(b  )
+            x_new = [[None for _ in range(len(seq))] for seq in x]
+            # print(f"created {len(buckets)} buckets based on n_landmarks", end=" | ")
+            # print(f"bucket sizes: {sorted([(n, len(bucket['seqs'])) for n,bucket in buckets.items()], key=lambda x: x[-1])}", end=" | ")
+            for bucket in buckets.values():
+                bucket["seqs"] = [(torch.from_numpy(f) if isinstance(f, np.ndarray) else torch.tensor(f)) for f in bucket["seqs"]]
+                bucket["seqs"] = torch.stack(bucket["seqs"]).type(self.dtype).to(self.device)
+                bucket["seqs"] = self.frame_model(bucket["seqs"])
+                for seq, b in zip(bucket["seqs"], bucket["indexes"]):
+                    x_new[b] = seq
+            x = torch.stack(x_new).contiguous()
+            # print("after frame_model shape:", x.shape)
+
 
         x = self.time_model(x.squeeze(-2), timestamps=timestamps, return_last_hidden_states=return_last_hidden_states)
         return x

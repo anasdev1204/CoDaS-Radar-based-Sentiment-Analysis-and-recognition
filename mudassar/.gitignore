@@ -1,4 +1,5 @@
 *.pt
 *.pth
-temp_*.ipynb
+*.pkl
 *.csv
+temp_*.ipynb
