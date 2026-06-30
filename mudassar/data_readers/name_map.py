@@ -1,3 +1,7 @@
+import os
+from glob import glob
+
+
 MOTION_MAP = {
     "M01": "lateral-raise",
     "M02": "push-down",
@@ -41,3 +45,9 @@ EMOTION_MAP = {
     "E05": "depression",
     "E06": "excitement",
 }
+
+def map_to_name(behavior_code):
+    return MOTION_MAP.get(behavior_code, ACTIVITY_MAP.get(behavior_code, EMOTION_MAP.get(behavior_code, "UNKNOWN")))
+
+def behavior_name_from_path(path):
+    return map_to_name([os.path.normpath(path).split(os.sep)[-2]])
