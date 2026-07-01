@@ -3,6 +3,8 @@ from typing import Literal
 import torch
 from transformers import BertConfig, BertModel, LlamaConfig, LlamaModel
 
+from .utils import n_params, right_edge_padding
+
 
 class BaseModule(torch.nn.Module):
     def __init__(self):
@@ -14,7 +16,7 @@ class BaseModule(torch.nn.Module):
 
     @property
     def n_params(self):
-        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+        return n_params(self)
 
 
 class Identity(torch.nn.Module):
@@ -193,18 +195,45 @@ class RadarEncoder(BaseModule):
         x: (B, T, N, 4)
         """
 
-        B, T, N, _ = x.shape
-        x = x.view(B * T, N, self.input_dim)  # (B*T, N, 4)
-        x = self.point_cloud_encoder(x)  # (B*T, 64)
-        x = x.view(B, T, self.point_cloud_encoder.output_dim)  # (B, T, 64)
-        pooled = self.temporal_encoder(x)  # (B, 512)
-        logits = self.output_proj(pooled)  # (B, 2)
+        buckets = self.reshape_pce_input(x)  #   (B*T, N, 4)
+        for k in buckets.keys():
+            buckets[k]["tensors"] = self.point_cloud_encoder(torch.cat(buckets[k]["tensors"], dim=0))  # (B*T, 64)
+        x_ = self.reshape_pce_output(buckets)  #  (B, T, 64)
+        x, attn_mask = right_edge_padding(x_)
+        # print("items" ,x.shape, "attns", attn_mask.shape if attn_mask is not None else None)
+        pooled = self.temporal_encoder(x.contiguous(), attention_mask=attn_mask)  #   (B, 512)
+        logits = self.output_proj(pooled)  #   (B, 2)
 
         return logits
 
     @property
     def output_dim(self):
         return self.output_proj.out_features
+
+    def reshape_pce_input(self, x):
+        if isinstance(x, torch.Tensor):
+            x = [x]
+
+        buckets = {}
+        for i, t in enumerate(x):
+            B, T, N, E = t.shape
+            buckets.setdefault(N, {"tensors":[], "shapes": [], "indices": []})
+            buckets[N]["tensors"].append(t.reshape(B * T, N, E))
+            buckets[N]["shapes" ].append((B, T, N, E))
+            buckets[N]["indices"].append(i)
+
+        return buckets
+
+    def reshape_pce_output(self, buckets):
+        x = [None for _ in range(sum(len(bucket["shapes"]) for bucket in buckets.values()))]
+        for bucket in buckets.values():
+            split_sections = [B*T for B, T, N, E in bucket["shapes"]]
+            split_tensors = torch.split(bucket["tensors"], split_sections, dim=0)
+            for t, s, i in zip(split_tensors, bucket["shapes"], bucket["indices"]):
+                B, T, N, E = s
+                x[i] = t.reshape(B, T, self.point_cloud_encoder.output_dim)
+
+        return x
 
 
 class DownsampleBlock(BaseModule):
@@ -248,7 +277,23 @@ class Downsampler(BaseModule):
         }
 
     def forward(self, x):
-        return self.blocks(x)
+        return self.blocks(x.to(self.device))
+
+    def forward_attn_mask(self, attn_mask=None):
+        if isinstance(self.blocks, torch.nn.Identity):
+            return attn_mask
+
+        if attn_mask is None:
+            return None
+
+        for _ in self.blocks:
+            attn_mask = attn_mask[:, ::2]
+
+        return attn_mask
+
+    @property
+    def n_blocks(self):
+        return len(self.blocks) if isinstance(self.blocks, torch.nn.Sequential) else 0
 
 
 class InfraredEncoder(BaseModule):
@@ -271,14 +316,12 @@ class InfraredEncoder(BaseModule):
         x: (B, T, N * 7)
         """
 
-        if x.dim() == 4:
-            B, T, N, E = x.shape
-            x = x.reshape(B, T, N * E)  # (B, T, N*7)
-        x = x.transpose(-2, -1)  # (B, N*7, T)
+        x, attn_mask = self.reshape_input(x)  # (B, N*7, T), (B, T)
         x = self.downsampler(x)  # (B, 64, t)
+        attn_mask = self.downsampler.forward_attn_mask(attn_mask)  # (B, t)
 
         x = x.transpose(-2, -1)  # (B, t, 64)
-        x = self.temporal_encoder(x)  # (B, 512)
+        x = self.temporal_encoder(x, attn_mask)  # (B, 512)
 
         logits = self.output_proj(x)  # (B, 2)
 
@@ -287,6 +330,17 @@ class InfraredEncoder(BaseModule):
     @property
     def output_dim(self):
         return self.output_proj.out_features
+
+    def reshape_input(self, x):
+        if isinstance(x, torch.Tensor):
+            x = [x]
+
+        t, attn_mask = right_edge_padding(x)
+        if t.dim() == 4:
+            B, T, N, E = t.shape
+            t = t.reshape(B, T, N * E)  # (B, T, N*7)
+        t = t.transpose(-2, -1)  # (B, N*7, T)
+        return t, attn_mask
 
 
 class FancyInfraredEncoder(BaseModule):
@@ -310,11 +364,14 @@ class FancyInfraredEncoder(BaseModule):
         x: (B, T, N, E)
         """
 
+        x, attn_mask = self.handle_jagged_input(x)  # (B, T, N, E), (B, T)
+
         x = x.transpose(-3, -2)  #         (B, N, T, E)
         x = x.transpose(-2, -1)  #         (B, N, E, T)
         B, N, E, T = x.shape
         x = x.reshape(B*N , E, T)  #       (B*N,  E, T)
         x = self.downsampler(x)  #         (B*N,  C, t)
+        attn_mask = self.downsampler.forward_attn_mask(attn_mask)  # (B, t)
 
         x = x.view(B, N, *x.shape[-2:])  # (B, N, C, t)
         x = x.transpose(-2, -1)  #         (B, N, t, C)
@@ -324,7 +381,7 @@ class FancyInfraredEncoder(BaseModule):
         x = self.point_cloud_encoder(x)  # (B*t, C)
 
         x = x.reshape(B, T, self.point_cloud_encoder.output_dim)  # (B, t, C)
-        x = self.temporal_encoder(x)  #    (B, e)
+        x = self.temporal_encoder(x, attention_mask=attn_mask)  #    (B, e)
 
         logits = self.output_proj(x)  #    (B, output_dim)
         return logits
@@ -333,6 +390,15 @@ class FancyInfraredEncoder(BaseModule):
     def output_dim(self):
         return self.output_proj.out_features
 
+    def handle_jagged_input(self, x):
+        if isinstance(x, torch.Tensor):
+            x = [x]
+        t, attn_mask = right_edge_padding(x)
+        return t, attn_mask
+
+    # def handle_pce_input(self, x, attn_mask):
+    #     """the padding frames are unnecessarily processed by the point cloud encoder.
+    #     but we need to add padding again after PCE."""
 
 def get_model(model_type, model_kwargs):
     if model_type == "radar":
