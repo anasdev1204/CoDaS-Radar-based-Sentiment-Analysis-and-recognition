@@ -15,6 +15,11 @@ Ankith Manjunath, Ying Liu, Bernardo Henriques, and Armin Engstle.
 \newblock Radar based object detection and tracking for autonomous driving.
 \newblock In {\em 2018 IEEE MTT-S International Conference on Microwaves for Intelligent Mobility (ICMIM)}, pages 1--4, 2018.
 
+\bibitem[\protect\citeauthoryear{Rokade \bgroup \em et al.\egroup }{2025}]{sentiment2025}
+Gayatri Rokade, Radhe Ughade, and Palash Gaurshettiwar.
+\newblock Deep learning for sentiment analysis.
+\newblock In {\em 2025 4th International Conference on Sentiment Analysis and Deep Learning (ICSADL)}, pages 240--244, 2025.
+
 \bibitem[\protect\citeauthoryear{Sun \bgroup \em et al.\egroup }{2020}]{radargesture2020}
 Yuliang Sun, Tai Fei, Xibo Li, Alexander Warnecke, Ernst Warsitz, and Nils Pohl.
 \newblock Real-time radar-based gesture detection and recognition built in an edge-computing platform.
