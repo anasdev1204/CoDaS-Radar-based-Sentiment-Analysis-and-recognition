@@ -3,3 +3,5 @@
 *.pkl
 *.csv
 temp_*.ipynb
+*.jsonl
+experiments/

@@ -7,13 +7,13 @@ import pandas as pd
 
 class InfraredData:
     # +y is above
-    def __init__(self, landmarks, timestamps, path=None):
-        self.landmarks = landmarks
+    def __init__(self, frames, timestamps, path=None):
+        self.frames = frames
         self.timestamps = timestamps
         self.path = path
 
     @classmethod
-    def read_from_path(cls, path: str, transform=True, normalize=False):
+    def read_from_path(cls, path: str, transform=True, normalize=False, dtype=None):
         df = cls.read_csv(path)
 
         timestamps = df[cls.TIMESTAMP_COLUMN].astype(np.float32).to_numpy()
@@ -26,6 +26,8 @@ class InfraredData:
             landmarks = cls.transform(landmarks)
             if normalize:
                 landmarks = cls.normalize(landmarks)
+        if dtype is not None:
+            landmarks = landmarks.astype(dtype)
         return cls(landmarks, timestamps, path=path)
 
     @classmethod
@@ -44,12 +46,26 @@ class InfraredData:
         # campaign = os.path.normpath(path).split(os.sep)[-4]
         # return cls.fix_column_names(df, campaign)
 
+    def raw_data(self):
+        return self.frames
+
+    def augmented_data(self, low=0.7, high=1.0):
+        mask = np.zeros(self.n_frames, dtype=bool)
+        mask[np.random.choice(self.n_frames, size=round(self.n_frames * np.random.uniform(low, high)), replace=False)] = True
+        try:
+            import torch
+            if isinstance(self.frames, torch.Tensor):
+                mask = torch.from_numpy(mask)
+        except ImportError:
+            pass
+        return self.frames[mask] if len(self.frames.shape) == 3 else self.frames[:, mask]
+
     @property
     def n_frames(self):
-        return len(self.landmarks)
+        return self.frames.shape[-3] if hasattr(self.frames, "shape") else len(self.frames)
 
-    def animate(self, step=12, max_frames=2000, **kwargs):
-        points = self.landmarks[:max_frames:step, :, :3]
+    def animate(self, step=5, max_frames=2000, **kwargs):
+        points = self.frames[:max_frames:step, :, :3]
         print(points.shape)
 
         connections = [(0, 1), (0, 2), (0, 3), (3, 4), (3, 5)][: points.shape[1] - 1]

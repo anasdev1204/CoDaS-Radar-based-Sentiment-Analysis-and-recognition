@@ -1,6 +1,9 @@
+import os
+from copy import deepcopy
 from typing import Literal
 
 import torch
+import numpy as np
 from transformers import BertConfig, BertModel, LlamaConfig, LlamaModel
 
 from .utils import n_params, right_edge_padding
@@ -18,6 +21,20 @@ class BaseModule(torch.nn.Module):
     def n_params(self):
         return n_params(self)
 
+    def save(self, path: str):
+        torch.save({"config": getattr(self, 'config', None), "state_dict": self.state_dict()}, path)
+
+    @classmethod
+    def load(cls, path: str):
+        checkpoint = torch.load(path)
+        model = cls(**checkpoint.get("config", {}))
+        model.load_state_dict(checkpoint.get("state_dict", {}))
+        return model
+
+    def _pop_key(self, kwargs:dict=None, key="input_dim"):
+        kwargs=deepcopy(kwargs) or {}
+        kwargs.pop(key, None)
+        return kwargs
 
 class Identity(torch.nn.Module):
     def __init__(self):
@@ -69,8 +86,8 @@ class BertEncoder(BaseModule):
             "input_dim": input_dim,
             "embedding_size": embedding_size,
             "num_layers": num_layers,
-            "num_heads": num_heads,
-            "intermediate_size": intermediate_size,
+            "num_heads": config.num_attention_heads,
+            "intermediate_size": config.intermediate_size,
             "dropout": dropout,
             "use_pos_emb": use_pos_emb,
             "max_position_embeddings": max_position_embeddings,
@@ -81,6 +98,8 @@ class BertEncoder(BaseModule):
         """
         x: (batch, seq_len, embedding_size)
         """
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x)
         x = self.input_proj(x.to(self.device))
         if self.pooling_strategy == "cls":
             B, S, E = x.shape
@@ -128,6 +147,7 @@ class LlamaEncoder(BaseModule):
             num_key_value_heads=min(num_heads, embedding_size // 4),
             max_position_embeddings=4096,
             vocab_size=1,  # unused
+            # attention_dropout=dropout,
         )
 
         self.encoder = LlamaModel(config)
@@ -141,8 +161,8 @@ class LlamaEncoder(BaseModule):
             "input_dim": input_dim,
             "embedding_size": embedding_size,
             "num_layers": num_layers,
-            "num_heads": num_heads,
-            "intermediate_size": intermediate_size,
+            "num_heads": config.num_attention_heads,
+            "intermediate_size": config.intermediate_size,
             "pooling_strategy": pooling_strategy,
         }
 
@@ -151,6 +171,8 @@ class LlamaEncoder(BaseModule):
         x: (B, S, input_dim)
         attention_mask: (B, S)
         """
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x)
         x = self.input_proj(x.to(self.device))
         if self.pooling_strategy == "eos":
             B, S, E = x.shape
@@ -167,7 +189,7 @@ class LlamaEncoder(BaseModule):
             if attention_mask is None:
                 pooled = hidden.mean(dim=1)
             else:
-                mask = attention_mask.unsqueeze(-1)
+                mask = attention_mask.unsqueeze(-1).to(hidden.device)
                 pooled = (hidden * mask).sum(1) / mask.sum(1).clamp(min=1)
         return pooled
 
@@ -180,14 +202,14 @@ class RadarEncoder(BaseModule):
     def __init__(self, input_dim, output_dim=2, point_cloud_encoder_kwargs=None, temporal_encoder_kwargs=None):
         super().__init__()
         self.input_dim = input_dim
-        self.point_cloud_encoder = BertEncoder(input_dim, **(point_cloud_encoder_kwargs or {}))
-        self.temporal_encoder    = LlamaEncoder(self.point_cloud_encoder.output_dim, **(temporal_encoder_kwargs or {}))
+        self.point_cloud_encoder = BertEncoder(input_dim, **self._pop_key(point_cloud_encoder_kwargs))
+        self.temporal_encoder    = LlamaEncoder(self.point_cloud_encoder.output_dim, **self._pop_key(temporal_encoder_kwargs))
         self.output_proj = torch.nn.Linear(self.temporal_encoder.output_dim, output_dim)
         self.config = {
             "input_dim": input_dim,
             "output_dim": output_dim,
-            "point_cloud_encoder_kwargs": point_cloud_encoder_kwargs,
-            "temporal_encoder_kwargs": temporal_encoder_kwargs,
+            "point_cloud_encoder_kwargs": self.point_cloud_encoder.config,
+            "temporal_encoder_kwargs": self.temporal_encoder.config,
         }
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -211,6 +233,21 @@ class RadarEncoder(BaseModule):
         return self.output_proj.out_features
 
     def reshape_pce_input(self, x):
+        if isinstance(x, list) and x and isinstance(x[0], list):
+            B = len(x)
+            buckets = {}
+            for b, sample in enumerate(x):
+                T = len(sample)
+                for t, frame in enumerate(sample):
+                    if isinstance(frame, np.ndarray):
+                        frame = torch.from_numpy(frame)
+                    *_, N, E = frame.shape
+                    buckets.setdefault(N, {"tensors":[], "shapes": [], "indices": []})
+                    buckets[N]["tensors"].append(frame.reshape(1, N, E))
+                    buckets[N]["shapes" ].append((B, T, N, E))
+                    buckets[N]["indices"].append((b, t))
+            return buckets
+
         if isinstance(x, torch.Tensor):
             x = [x]
 
@@ -225,14 +262,33 @@ class RadarEncoder(BaseModule):
         return buckets
 
     def reshape_pce_output(self, buckets):
-        x = [None for _ in range(sum(len(bucket["shapes"]) for bucket in buckets.values()))]
-        for bucket in buckets.values():
-            split_sections = [B*T for B, T, N, E in bucket["shapes"]]
-            split_tensors = torch.split(bucket["tensors"], split_sections, dim=0)
-            for t, s, i in zip(split_tensors, bucket["shapes"], bucket["indices"]):
-                B, T, N, E = s
-                x[i] = t.reshape(B, T, self.point_cloud_encoder.output_dim)
+        first_bucket = next(iter(buckets.values()))
+        is_nested_jagged = isinstance(next(iter(first_bucket["indices"])), tuple)
 
+        if is_nested_jagged:
+            x = [None for _ in range(first_bucket["shapes"][0][0])]
+        else:
+            x = [None for _ in range(sum(len(bucket["shapes"]) for bucket in buckets.values()))]
+
+        for bucket in buckets.values():
+            if is_nested_jagged:
+                split_sections = [1 for _ in range(len(bucket["shapes"]))]
+            else:
+                split_sections = [B*T for B, T, N, E in bucket["shapes"]]
+            split_tensors = torch.split(bucket["tensors"], split_sections, dim=0)
+            for tnsr, s, i in zip(split_tensors, bucket["shapes"], bucket["indices"]):
+                if is_nested_jagged:
+                    b, t = i
+                    B, T, N, E = s
+                    if not x[b]:
+                        x[b] = [None for _ in range(T)]
+                    x[b][t] = tnsr.reshape(1, 1, self.point_cloud_encoder.output_dim)
+                else:
+                    B, T, N, E = s
+                    x[i] = tnsr.reshape(B, T, self.point_cloud_encoder.output_dim)
+
+        if x and isinstance(x[0], list):
+            x = [torch.cat(sample, dim=1) for sample in x]
         return x
 
 
@@ -277,7 +333,9 @@ class Downsampler(BaseModule):
         }
 
     def forward(self, x):
-        return self.blocks(x.to(self.device))
+        if isinstance(x, np.ndarray):
+            x = torch.from_numpy(x)
+        return self.blocks(x)
 
     def forward_attn_mask(self, attn_mask=None):
         if isinstance(self.blocks, torch.nn.Identity):
@@ -300,14 +358,14 @@ class InfraredEncoder(BaseModule):
     def __init__(self, input_dim, output_dim=2, downsampler_kwargs=None, temporal_encoder_kwargs=None):
         super().__init__()
         self.input_dim = input_dim
-        self.downsampler    = Downsampler(self.input_dim, **(downsampler_kwargs or {}))
-        self.temporal_encoder = LlamaEncoder(self.downsampler.output_dim, **(     temporal_encoder_kwargs or {}))
+        self.downsampler    = Downsampler(self.input_dim, **self._pop_key(downsampler_kwargs))
+        self.temporal_encoder = LlamaEncoder(self.downsampler.output_dim, **self._pop_key(temporal_encoder_kwargs))
         self.output_proj = torch.nn.Linear(self.temporal_encoder.output_dim, output_dim)
         self.config = {
             "input_dim": input_dim,
             "output_dim": output_dim,
-            "downsampler_kwargs": downsampler_kwargs,
-            "temporal_encoder_kwargs": temporal_encoder_kwargs,
+            "downsampler_kwargs": self.downsampler.config,
+            "temporal_encoder_kwargs": self.temporal_encoder.config,
         }
 
 
@@ -315,7 +373,6 @@ class InfraredEncoder(BaseModule):
         """
         x: (B, T, N * 7)
         """
-
         x, attn_mask = self.reshape_input(x)  # (B, N*7, T), (B, T)
         x = self.downsampler(x)  # (B, 64, t)
         attn_mask = self.downsampler.forward_attn_mask(attn_mask)  # (B, t)
@@ -334,36 +391,55 @@ class InfraredEncoder(BaseModule):
     def reshape_input(self, x):
         if isinstance(x, torch.Tensor):
             x = [x]
-
+        x = self.pad_landmarks([(torch.from_numpy(x_) if isinstance(x_, np.ndarray) else x_).flatten(2) for x_ in x])  # (B, T, N*7)
         t, attn_mask = right_edge_padding(x)
-        if t.dim() == 4:
-            B, T, N, E = t.shape
-            t = t.reshape(B, T, N * E)  # (B, T, N*7)
         t = t.transpose(-2, -1)  # (B, N*7, T)
         return t, attn_mask
+
+    def pad_landmarks(self, x: list[torch.Tensor]):
+        padded = []
+        for t in x:
+            if t.shape[-1] < self.input_dim:
+                t = torch.nn.functional.pad(t, (0, self.input_dim - t.shape[-1]), value=0)
+            padded.append(t)
+        return padded
 
 
 class FancyInfraredEncoder(BaseModule):
     def __init__(self, input_dim, output_dim=2, downsampler_kwargs=None, point_cloud_encoder_kwargs=None, temporal_encoder_kwargs=None):
         super().__init__()
         self.input_dim = input_dim
-        self.downsampler    = Downsampler(self.input_dim, **(downsampler_kwargs or {}))
-        self.point_cloud_encoder = BertEncoder(self.downsampler.output_dim, **(point_cloud_encoder_kwargs or {}))
-        self.temporal_encoder = LlamaEncoder(self.point_cloud_encoder.output_dim, **(     temporal_encoder_kwargs or {}))
+        self.downsampler    = Downsampler(self.input_dim, **self._pop_key(downsampler_kwargs))
+        self.point_cloud_encoder = BertEncoder(self.downsampler.output_dim, **self._pop_key(point_cloud_encoder_kwargs))
+        self.temporal_encoder = LlamaEncoder(self.point_cloud_encoder.output_dim, **self._pop_key(temporal_encoder_kwargs))
         self.output_proj = torch.nn.Linear(self.temporal_encoder.output_dim, output_dim)
         self.config = {
             "input_dim": input_dim,
             "output_dim": output_dim,
-            "downsampler_kwargs": downsampler_kwargs,
-            "point_cloud_encoder_kwargs": point_cloud_encoder_kwargs,
-            "temporal_encoder_kwargs": temporal_encoder_kwargs,
+            "downsampler_kwargs": self.downsampler.config,
+            "point_cloud_encoder_kwargs": self.point_cloud_encoder.config,
+            "temporal_encoder_kwargs": self.temporal_encoder.config,
         }
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
         x: (B, T, N, E)
         """
+        if isinstance(x, list) and len({sample.shape[-2] for sample in x}) > 1:
+            buckets = self.bucket(x)
+            for k in buckets.keys():
+                buckets[k]["tensors"], buckets[k]["attn_mask"] = self.forward_downsampler(buckets[k]["tensors"])
+                buckets[k]["tensors"] = self.forward_pce(buckets[k]["tensors"])
+            x, attn_mask = self.unbucket(buckets)
+        else:
+            x, attn_mask = self.forward_downsampler(x)  # (B, t, N, C), (B, t)
+            x = self.forward_pce(x)  # (B, t, e)
+        x = self.temporal_encoder(x, attention_mask=attn_mask)  #   (B, e_)
 
+        logits = self.output_proj(x)  #    (B, output_dim)
+        return logits
+
+    def forward_downsampler(self, x: torch.Tensor):
         x, attn_mask = self.handle_jagged_input(x)  # (B, T, N, E), (B, T)
 
         x = x.transpose(-3, -2)  #         (B, N, T, E)
@@ -376,15 +452,37 @@ class FancyInfraredEncoder(BaseModule):
         x = x.view(B, N, *x.shape[-2:])  # (B, N, C, t)
         x = x.transpose(-2, -1)  #         (B, N, t, C)
         x = x.transpose(-3, -2)  #         (B, t, N, C)
+
+        return x, attn_mask
+
+    def forward_pce(self, x: torch.Tensor):
         B, T, N, C = x.shape
         x = x.reshape(B * T, N, C)  #      (B*t, N, C)
-        x = self.point_cloud_encoder(x)  # (B*t, C)
+        x = self.point_cloud_encoder(x)  # (B*t, E)
 
-        x = x.reshape(B, T, self.point_cloud_encoder.output_dim)  # (B, t, C)
-        x = self.temporal_encoder(x, attention_mask=attn_mask)  #    (B, e)
+        x = x.reshape(B, T, self.point_cloud_encoder.output_dim)  # (B, t, e)
+        return x
 
-        logits = self.output_proj(x)  #    (B, output_dim)
-        return logits
+    def bucket(self, batch: list[torch.Tensor]):
+        buckets = {}
+        for b, sample in enumerate(batch):
+            *_, N, E = sample.shape
+            buckets.setdefault(N, {"tensors":[], "indices": []})
+            buckets[N]["tensors"].append(sample)
+            buckets[N]["indices"].append(b)
+        return buckets
+
+    def unbucket(self, buckets: dict):
+        batch = [None for _ in range(sum(len(bucket["indices"]) for bucket in buckets.values()))]
+        attns = deepcopy(batch)
+        for bucket in buckets.values():
+            for j, (tnsr, i) in enumerate(zip(bucket["tensors"], bucket["indices"])):
+                batch[i] = tnsr.unsqueeze(0)  # (1, t, E)
+                if bucket.get("attn_mask") is not None:
+                    attns[i] = bucket["attn_mask"][j].unsqueeze(0)  # (1, t)
+
+        return right_edge_padding(batch, attns)
+
 
     @property
     def output_dim(self):
@@ -400,7 +498,9 @@ class FancyInfraredEncoder(BaseModule):
     #     """the padding frames are unnecessarily processed by the point cloud encoder.
     #     but we need to add padding again after PCE."""
 
-def get_model(model_type, model_kwargs):
+def get_model(model_type, model_kwargs, seed=None):
+    if isinstance(seed, int):
+        torch.manual_seed(seed)
     if model_type == "radar":
         return RadarEncoder(**(model_kwargs or {}))
     elif model_type == "infrared":
@@ -409,3 +509,25 @@ def get_model(model_type, model_kwargs):
         return FancyInfraredEncoder(**(model_kwargs or {}))
     else:
         raise ValueError(f"Unknown model type: {model_type}")
+
+def get_model_from_mutations(mutations, seed=None):
+    import json
+    from .config import apply_params_to_config, baseline_model_config
+
+    if isinstance(mutations, str):
+        mutations = json.loads(mutations)
+
+    model_type = next(iter(mutations.keys())).split(".")[0].strip()
+    model_kwargs = apply_params_to_config(baseline_model_config(), mutations)[model_type]
+
+    return get_model(model_type, model_kwargs, seed=seed)
+
+def get_model_from_path(path):
+    if os.path.basename(path)[0] == "r":
+        return RadarEncoder.load(path)
+    elif os.path.basename(path)[0] == "i":
+        return InfraredEncoder.load(path)
+    elif os.path.basename(path)[0] == "f":
+        return FancyInfraredEncoder.load(path)
+    else:
+        raise ValueError(f"Unknown model type: '{path}'")

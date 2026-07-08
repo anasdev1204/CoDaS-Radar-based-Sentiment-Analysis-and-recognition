@@ -16,18 +16,22 @@ class RadarData:
     # "RF-Behavior/Radar/C1/U01/M06/01/" # "lateral-to-front" # suggests that +x = front
     # "RF-Behavior/Radar/C1/U03/M11/01/" # "two-hand-throw"   # suggests that +x = front
 
-    def __init__(self, points, radar_ids, timestamps):
-        self.points = points
+    def __init__(self, frames, radar_ids, timestamps, unique_rids=None):
+        self.frames = frames
         self.radar_ids = radar_ids
         self.timestamps = np.array(timestamps)
         self.path = None
         self.start = None
         self.fps = None
+        if unique_rids is None:
+            self.unique_rids = np.array(sorted({i for rids in radar_ids for i in rids}))
+        else:
+            self.unique_rids = unique_rids
 
     @classmethod
-    def read_from_path(cls, path: str, transform=True, normalize=False):
+    def read_from_path(cls, path: str, transform=True, normalize=False, dtype=None):
         pickles = cls.read_pickles(path)
-        points, rids, timestamps = [], [], []
+        points, rids, timestamps, unique_rids = [], [], [], set()
         for r_id, pkl in pickles.items():
             for frame in pkl:
                 if len(frame):
@@ -36,10 +40,13 @@ class RadarData:
                         coordinates = cls.transform(coordinates, r_id)
                         if normalize:
                             coordinates = cls.normalize(coordinates)
+                    if dtype is not None:
+                        coordinates = coordinates.astype(dtype)
                     points.append(coordinates)
                     rids.append([r_id for _ in range(len(frame))])
                     timestamps.append(frame[0, 0])
-        rd = RadarData(points, rids, timestamps)
+            unique_rids.add(r_id)
+        rd = RadarData(points, rids, timestamps, unique_rids=np.array(sorted(unique_rids)))
         rd.path = path
         return rd
 
@@ -59,13 +66,13 @@ class RadarData:
                 pickles[int(os.path.basename(file).split(".")[0])] = pickle.load(f)
         return pickles
 
-    def bin(self, fps=10, int_time=False):
+    def bin(self, fps=10.0, int_time=False):
         if fps is None or fps <= 0:
             fps = self.mean_fps(self.timestamps)
         start, bins = self.make_time_bins(self.timestamps, fps=fps)
         points = [[] for _ in range(bins.max() + 1)]
         radars = [[] for _ in range(bins.max() + 1)]
-        for p, r, b in zip(self.points, self.radar_ids, bins):
+        for p, r, b in zip(self.frames, self.radar_ids, bins):
             points[b].extend(p.tolist())
             radars[b].extend(r)
 
@@ -84,48 +91,80 @@ class RadarData:
         return rd
 
     @classmethod
-    def make_time_bins(cls, timestamps, fps=10):
+    def make_time_bins(cls, timestamps, fps=10.0):
         if fps is None or fps <= 0:
             fps = cls.mean_fps(timestamps)
         start = min(timestamps)
         return start, ((np.array(timestamps) - start) * fps).astype(int)
 
+    def raw_data(self) -> list:
+        return self.frames
+
+    def augmented_data(self, low: float=0.7, high: float=1, by_rid=0.5):
+        if np.random.rand() < by_rid:
+            return self.augment_by_rid(low=low, high=high)
+        else:
+            return self.augment_by_points(low=low, high=high)
+
+    def augment_by_rid(self, low: float=0.7, high: float=1) -> list:
+        n = round(len(self.unique_rids) * np.random.uniform(low, high))
+        idx = np.arange(len(self.unique_rids))
+        np.random.shuffle(idx)
+        keep_ids = self.unique_rids[idx[:n]]
+
+        sample = [self._apply_mask(frame, np.isin(rids, keep_ids)) for frame, rids in zip(self.frames, self.radar_ids)]
+        return sample
+
+    def augment_by_points(self, low: float=0.7, high: float=1) -> list:
+        lens = [f.shape[-2] for f in self.frames]
+        min_len, max_len = min(lens), max(lens)
+        len_gap = max_len - min_len
+        frac_gap = high - low
+        sample = []
+        for f in self.frames:
+            n_true = round(f.shape[-2] * np.random.uniform(high - ((f.shape[-2] - min_len)/len_gap * frac_gap), high))
+            mask = np.zeros(f.shape[-2], dtype=bool)
+            mask[np.random.choice(f.shape[-2], n_true, replace=False)] = True
+            sample.append(self._apply_mask(f, mask))
+
+        return sample
+
     def pad(self, min_density=None, max_points=None):
         if min_density is None:
-            actual_max_points = max(len(p) for p in self.points)
+            actual_max_points = max(f.shape[-2] for f in self.frames)
         else:
-            actual_max_points = max((d[:, -1] > min_density).sum() for d in self.points)
+            actual_max_points = max((d[:, -1] > min_density).sum() for d in self.frames)
         max_points = max(max_points or 0, actual_max_points)
 
         points, r_ids = [], []
-        for p, r in zip(self.points, self.radar_ids):
+        for f, r in zip(self.frames, self.radar_ids):
             if min_density is None:
-                pad_width = max_points - len(p)
+                pad_width = max_points - f.shape[-2]
             else:
-                mask = p[:, -1] > min_density
+                mask = f[:, -1] > min_density
                 pad_width = max_points - mask.sum()
-                p = p[mask]
-                r = [r[i] for i in range(len(p)) if mask[i]]
+                f = f[mask]
+                r = [r[i] for i in range(f.shape[-2]) if mask[i]]
 
-            if len(p) > 0:
-                points.append(p.tolist() + [(0, 0, 0, 0)] * pad_width)
+            if f.shape[-2] > 0:
+                points.append(f.tolist() + [(0, 0, 0, 0)] * pad_width)
                 r_ids.append(r + [None] * pad_width)
 
         rd = deepcopy(self)
-        rd.points = points
+        rd.frames = points
         rd.radar_ids = r_ids
         return rd
 
     @property
     def n_frames(self):
-        return len(self.points)
+        return len(self.frames)
 
     def animate(self, fps=10, **kwargs):
         rd = self
         if rd.start is None:
             rd = rd.bin(fps=fps)
         rd = rd.pad(min_density=kwargs.get("min_density"), max_points=kwargs.get("max_points"))
-        points = np.array(rd.points)[:, :, :3]
+        points = np.array(rd.frames)[:, :, :3]
         print(points.shape)
         scatter_colors = [[(RadarData.COLORS[i] if i is not None else (0, 0, 0, 0)) for i in r] for r in rd.radar_ids]
 
@@ -209,9 +248,17 @@ class RadarData:
 
         return np.stack([x, y, z], axis=1) + translation
 
+    def _apply_mask(self, f, mask):
+        try:
+            import torch
+            if isinstance(f, torch.Tensor):
+                mask = torch.from_numpy(mask)
+        except ImportError:
+            pass
+        return f[..., mask, :]
 
 if __name__ == "__main__":
     path = "./RF-Behavior/Radar/C2/U01/A02/01/"
     rd_ = RadarData.read_from_path(path)
     rdb = rd_.bin(fps=10, int_time=True)
-    print(len(rdb.points), len(rdb.radar_ids), len(rdb.timestamps), rdb.timestamps, rdb.fps)
+    print(len(rdb.frames), len(rdb.radar_ids), len(rdb.timestamps), rdb.timestamps, rdb.fps)
