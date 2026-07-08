@@ -1,0 +1,212 @@
+\documentclass{article}
+\pdfpagewidth=8.5in
+\pdfpageheight=11in
+
+\usepackage{ijcai26}
+
+\usepackage{times}
+\usepackage{soul}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage[utf8]{inputenc}
+\usepackage[small]{caption}
+\usepackage{graphicx}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{booktabs}
+\usepackage{algorithm}
+\usepackage{algorithmic}
+\usepackage[switch]{lineno}
+
+\linenumbers
+
+\urlstyle{same}
+
+\newtheorem{example}{Example}
+\newtheorem{theorem}{Theorem}
+
+\pdfinfo{
+/TemplateVersion (IJCAI.2026.0)
+}
+
+\title{Radar-based Sentiment Analysis and Recognition}
+
+\author{
+Mohamed-anas Abbouchi$^1$
+\and
+Haider Azam$^2$
+\and
+Mudassar$^3$
+\affiliations
+$^1$Aalto University\\
+$^2$Second Affiliation\\
+$^3$Third Affiliation\\
+% \emails
+% mohamed-anas.abbouchi@aalto.fi,
+% second@example.com,
+% third@example.com
+}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+
+\end{abstract}
+
+\section{Introduction}
+
+Sentiment analysis commonly refers to the process of identifying and extracting subjective information from text, speech, or other forms of data \cite{ain2017sentiment}. In this study, we focused on sentiment analysis using radar-based data. Radar sensors are a powerful tool for capturing subtle movements and gestures. They are non-intrusive, privacy-preserving, and much easier to deploy in real-world scenarios compared to other modalities such as cameras or wearable sensors \cite{radargesture2020}. The data from these sensors have proven useful in applications such as gesture recognition \cite{radargesture2020}, object detection \cite{radarobject2018} and human activity recognition \cite{radaractivity2019}. 
+
+The main focus of researchers in the field of sentiment analysis has been on text-based and speech-based data, with a significant amount of work done on NLP models \cite{sentiment2025} and speech processing techniques. The objective was always to create models that understand human emotions through media but rarely through their body movements. Consequently, the use of radar-based data for sentiment analysis and recognition is still a relatively unexplored area, with limited research and few datasets available. The characteristics of radar signals, such as their ability to capture micro-movements and gestures, make them a promising source of information for micro-movement based experiments such as sentiment analysis \cite{radargesture2020}.
+
+The objective of this paper is to explore the potential of radar-based data for sentiment analysis and recognition. We propose different approaches to transform radar signals into training data and evaluate how effective the classification models are in recognizing different sentiments. We split the paper into three experiments, each focusing on a different aspect of the problem. The first experiment focuses on feature-based classification using a mix of kinematic, behavioral and spatial features extracted from the radar signals. The second experiment is based on transformers [FILL HERE]. The third is [FILL HERE].
+
+\section{Related Work}
+
+This research is based on the experiments conducted by \cite{rfbehavior2025}, in which they introduced "a multimodal radio frequency dataset" for both human behavior recognition and emotion analysis. By conducting a series of experiments on 44 participants, they collected data from 13 radars, 8 RFID tags, LoRa devices and infrared cameras in 4 different campaigns that each focused on a different aspect of human behavior. We will be interested in this paper on the third campaign that was built around 6 sentiment states: \textit{depression, distraction, excitement, focus, relaxation and stress}.
+
+\section{Experiment 1: Feature-Based Classification}
+
+\subsection{Preprocessing}
+
+The data is currently composed of a sequence of XYZ coordinates representing the position of a target in 3D space over time. The first step in preprocessing is to synchronize the data from different radar sensors to ensure that the data from different sensors is aligned in time, as this will allow for accurate feature extraction. Once the data is synchronized, the data is normalized on a user basis so the user-specific biases are removed. 
+
+With the data synchronized and normalized, we can proceed to segment the data into smaller windows. This is done to capture the temporal dynamics of the target's movement. The window size and stride are hyperparameters that can be tuned based on the specific application and dataset. In this study, we experimented with different window sizes and strides to find the optimal configuration for our classification task. Lower window sizes tend to underperform and higher window sizes tend to overfit the data and lose generalization. The optimal window size was found to be 90 frames with a stride of 20 frames. This configuration allows for capturing the temporal dynamics of the target's movement while also providing enough data for training the classification models.
+
+\subsection{Feature Extraction}
+
+Given the preprocessed data, we can extract a set of features that capture the kinematic, behavioral and spatial characteristics of the target's movement. The features are extracted from each window of data and are used as input to the classification models. The features are divided into three categories: motion dynamics, statistical and directional features. The motion dynamics features capture the speed, acceleration and jerk of the target's movement. The statistical features capture the distribution of the target's movement in terms of speed, acceleration and jerk. The directional features capture the directionality of the target's movement in terms of turn angles and explained variance ratios. The extracted features are summarized in Tables \ref{tab:dynamics}, \ref{tab:directional} and \ref{tab:behavior}.
+
+
+\begin{table}[!t]
+\centering
+\small
+\begin{tabular}{p{3.1cm} p{4.2cm}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+Path Efficiency & Ratio of displacement to trajectory length \\
+Mean Speed & Average speed. \\
+Std. Speed &  Variability in speed. \\
+Median Speed & Median speed. \\
+25th Percentile Speed & Lower quartile of speed. \\
+75th Percentile Speed & Upper quartile of speed. \\
+Mean Acceleration & Average rate of change in speed. \\
+Std. Acceleration & Variability of acceleration. \\
+Median Acceleration & Median acceleration. \\
+25th Percentile Acceleration & Lower quartile of acceleration values. \\
+75th Percentile Acceleration & Upper quartile of acceleration values. \\
+\bottomrule
+\end{tabular}
+\caption{Motion dynamics features.}
+\label{tab:dynamics}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\small
+\begin{tabular}{p{3.1cm} p{4.2cm}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+Mean Jerk & Average change of acceleration \\
+Std. Jerk & Variability in jerk values. \\
+Median Jerk & Median jerk. \\
+25th Percentile Jerk & Lower quartile of jerk values. \\
+75th Percentile Jerk & Upper quartile of jerk values. \\
+Spectral Centroid & Center of mass of the movement frequency spectrum. \\
+Spectral Entropy & Complexity of the frequency spectrum. \\
+Speed CV & Normalized measure of speed variability. \\
+Direction Change Rate & Rate of changes in movement direction. \\
+Speed Autocorrelation &  Temporal dependence of cursor speed. \\
+Tortuosity & Degree of path curvature relative to its overall length. \\
+\bottomrule
+\end{tabular}
+\caption{Statistical and directional features.}
+\label{tab:directional}
+\end{table}
+
+\begin{table}[!t]
+\centering
+\small
+\begin{tabular}{p{3.1cm} p{4.2cm}}
+\toprule
+\textbf{Feature} & \textbf{Description} \\
+\midrule
+Speed Skewness & Asymmetry of the speed distribution. \\
+Fraction Stationary Time & Proportion the target remains stationary. \\
+Mean Turn Angle & Average angle between consecutive movement segments. \\
+Turn Angle Entropy & Diversity and unpredictability of turning angles. \\
+Explained Variance Ratio 1 & Variance explained by the first principal component of the trajectory. \\
+Explained Variance Ratio 2 & Variance explained by the second principal component. \\
+Explained Variance Ratio 3 & Variance explained by the third principal component. \\
+\bottomrule
+\end{tabular}
+\caption{Statistical and directional features.}
+\label{tab:behavior}
+\end{table}
+
+\subsection{Training Loop}
+
+With the current setup, the data is now composed of 27 features per radar sensor. Given that we have 13 radar sensors, the total number of features is 351 over more than 600 windows. For an effective training of the classification models, we need to reduce the dimensionality of the data and select the most relevant features. To find the optimal configuration of window size, stride and number of features, we implemented a training loop that iterates over different configurations and evaluates the performance of the classification models using Leave-One-Subject-Out (LOSO) cross-validation. It uses the ANOVA F-test to select the top-$k$ features for each radar sensor and concatenates them to form the final feature set. The classification models are then trained on the training set and evaluated on the test set. The accuracy and weighted F1-score are recorded for each configuration and the best configuration is selected based on the highest mean accuracy across all folds. The training loop is summarized in Algorithm \ref{alg:feature_selection}.
+
+\begin{algorithm}[!t]
+\caption{Feature Selection and LOSO Classification}
+\label{alg:feature_selection}
+\begin{algorithmic}
+\FOR{each window configuration $(w,s)$}
+    \FOR{each feature count $k \in K$}
+        \FOR{each Leave-One-Subject-Out split}
+            \STATE Split the data into training and testing sets.
+            \FOR{each radar $r = 1,\ldots,13$}
+                \STATE Select the top-$k$ features using the ANOVA F-test.
+                \STATE Transform the training and testing feature sets.
+            \ENDFOR
+            \STATE Concatenate the selected features from all radars.
+            \FOR{each classifier $m \in \mathcal{M}$}
+                \STATE Train classifier $m$.
+                \STATE Evaluate on the test set.
+                \STATE Record the accuracy and weighted F1-score.
+            \ENDFOR
+        \ENDFOR
+        \STATE Compute the mean accuracy and weighted F1-score across all folds.
+    \ENDFOR
+\ENDFOR
+\FOR{each classifier}
+    \STATE Select the configuration with the highest mean accuracy.
+\ENDFOR
+\STATE \textbf{Output:} Best window size, stride, feature count, accuracy, and weighted F1-score for each classifier.
+\end{algorithmic}
+\end{algorithm}
+
+\subsection{Results}
+
+The best configuration for each model is selected based on the highest mean f1-score across all folds. As previously mentioned, the most optimal configuration across all models was found to be a window size of 90 frames, a stride of 20. The results of the training loop in Figure \ref{fig:models_comparison} are based on models trained with this configuration. 
+
+It shows that the SVM model outperforms the other models with a mean f1-score of 0.72, followed by LightGBM, xGBoost and MLP achieving mean f1-scores in the range of 0.66 and 0.67. The CatBoost classifier underperforms with a mean f1-score of 0.62.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/models_comparison.png}
+    \caption{Models comparison based on F1 score.}
+    \label{fig:models_comparison}
+\end{figure}
+
+\section{Experiment 2}
+
+\section{Experiment 3}
+
+\section{Results}
+
+\section{Discussion}
+
+\section*{Acknowledgments}
+
+%% The file named.bst is a bibliography style file for BibTeX 0.99c
+\bibliographystyle{named}
+\bibliography{ijcai26}
+
+\end{document}
+

@@ -1,0 +1,32 @@
+\begin{thebibliography}{}
+
+\bibitem[\protect\citeauthoryear{Ain \bgroup \em et al.\egroup }{2017}]{ain2017sentiment}
+Qurat~Tul Ain, Mubashir Ali, Amna Riaz, Amna Noureen, Muhammad Kamran, Babar Hayat, and A-u Rehman.
+\newblock Sentiment analysis using deep learning techniques: a review.
+\newblock {\em International Journal of Advanced Computer Science and Applications}, 8(6), 2017.
+
+\bibitem[\protect\citeauthoryear{Froehlich \bgroup \em et al.\egroup }{2024}]{radaractivity2019}
+Ann-Christine Froehlich, Desar Mejdani, Lukas Engel, Johanna Braeunig, Christoph Kammel, Martin Vossiek, and Ingrid Ullmann.
+\newblock A millimeter-wave mimo radar network for human activity recognition and fall detection.
+\newblock In {\em 2024 IEEE Radar Conference (RadarConf24)}, pages 1--5, 2024.
+
+\bibitem[\protect\citeauthoryear{Manjunath \bgroup \em et al.\egroup }{2018}]{radarobject2018}
+Ankith Manjunath, Ying Liu, Bernardo Henriques, and Armin Engstle.
+\newblock Radar based object detection and tracking for autonomous driving.
+\newblock In {\em 2018 IEEE MTT-S International Conference on Microwaves for Intelligent Mobility (ICMIM)}, pages 1--4, 2018.
+
+\bibitem[\protect\citeauthoryear{Rokade \bgroup \em et al.\egroup }{2025}]{sentiment2025}
+Gayatri Rokade, Radhe Ughade, and Palash Gaurshettiwar.
+\newblock Deep learning for sentiment analysis.
+\newblock In {\em 2025 4th International Conference on Sentiment Analysis and Deep Learning (ICSADL)}, pages 240--244, 2025.
+
+\bibitem[\protect\citeauthoryear{Sun \bgroup \em et al.\egroup }{2020}]{radargesture2020}
+Yuliang Sun, Tai Fei, Xibo Li, Alexander Warnecke, Ernst Warsitz, and Nils Pohl.
+\newblock Real-time radar-based gesture detection and recognition built in an edge-computing platform.
+\newblock {\em IEEE Sensors Journal}, 20(18):10706--10716, 2020.
+
+\bibitem[\protect\citeauthoryear{Zuo \bgroup \em et al.\egroup }{2025}]{rfbehavior2025}
+Si~Zuo, Yuqing Song, Sahar Golipoor, Ying Liu, Xujun Ma, and Stephan Sigg.
+\newblock Rf-behavior: A multimodal radio-frequency dataset for human behavior and emotion analysis, 2025.
+
+\end{thebibliography}
