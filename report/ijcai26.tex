@@ -10,6 +10,7 @@
 \usepackage[hidelinks]{hyperref}
 \usepackage[utf8]{inputenc}
 \usepackage[small]{caption}
+\usepackage{subcaption}
 \usepackage{graphicx}
 \usepackage{amsmath}
 \usepackage{amsthm}
@@ -43,7 +44,7 @@ $^2$Second Affiliation\\
 $^3$Third Affiliation\\
 % \emails
 % mohamed-anas.abbouchi@aalto.fi,
-% second@example.com,
+% m.haiderazam555@gmail.com,
 % third@example.com
 }
 
@@ -196,7 +197,191 @@ It shows that the SVM model outperforms the other models with a mean f1-score of
 
 \section{Experiment 2}
 
-\section{Experiment 3}
+\section{Experiment 3: Neural Network-Based Interpolation and Classification}
+The radar-based dataset consists of 13 separate radar sensors each recording data at different timestamps, in order to unify the sensors to a single timeline, interpolation is required. This method consists of performing interpolation using Neural Networks and comparing with classical methods, emotion classification is also performed.
+\subsection{Preprocessing}
+Using the preprocessing sample code provided in the dataset, the radar sensors' data were converted to 39 XYZ coordinates, afterwards, the timestamps were rounded to 1 decimal place and the sensors concatenated together into a single csv file for each user for each emotion. These csv files were then concatenated together to get a singular csv file containing the processed data of every user, emotion and sensor. Grouping by user\_id and emotion, a sparse sequence of observations from all the sensors combined can be retrieved.
+
+To avoid any overlap between dataset splits and to test on unseen users, the user\_ids were split into train, valid and test sets with ratios 0.6/0.2/0.2 . Normalization is performed by setting mean to 0  to allow the model to only train on the residual. Min-max normalization is applied to the timestamps to set the minimum to 0 and maximum to 1.
+
+While training the models, 0.1 to 0.3 of the sequence is randomly set aside as the target, this is set to 0.2 for validation and testing with a static random state for reproducibility. An observation mask containing the non-Nan values is obtained for both the input and target sequence, this is combined with the input sequence to allow the model to focus on observations and is used to train the model using only non-Nan target values. Last Observation Carried Forward (LOCF) is then applied on the data to counter-act the sparsity of the dataset.
+
+\subsection{Model Selection}
+The proposed method consists of training a Neural Controlled Differential Equation (NCDE) model by Kidger et. al \cite{kidger2020neuralcde} for interpolation and classification using the torchcde library. It was selected due to it's ability to deal with irregular timestamps. As shown in Figure. \ref{fig:ncde}, the main advantage over Recurrent Neural Networks (RNNs) is the continuous update of it's hidden state, this is achieved by solving and integrating the differential equation in Equation. \ref{eq:differential} where \(f(t,z(t))\) and \(g(x_0)\) are Neual Networks (NNs) and X is a Hermite cubic splines interpolation of sparse input sequence.
+
+\begin{equation}
+    \frac{dz(t)}{dt}
+    =
+    f(t, z(t))
+    \frac{dX(t)}{dt},
+    \qquad
+    z(t_0)=g(x_0),
+\label{eq:differential}
+\end{equation}
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/NCDE.png}
+    \caption{Comparison of hidden state updates between RNN and NCDE.}
+    \label{fig:ncde}
+\end{figure}
+
+Shown in Figure. \ref{fig:workflow} is the workflow of the proposed method, it starts with interpolating the input sequence using a differentiable hermite cubic spline which is used to obtain a continuous control data X used to obtain z(0) and both are fed into the cdeint function along with the target timestamps dictating at what time we want the hidden states z(t), the entire sequence is fed into an MLP decoder to get the predicted values while the final hidden state is fed into an MLP classifier to get emotion probabilities. Figure. \ref{fig:architecture} shows the various NNs used, Figure. \ref{fig:cdefunc} is the function \(f(t,z(t))\) which is integrated at the target timestamps to get the hidden state at that timestamp, Figure. \ref{fig:encoder} is the function \(g(x)\) used to obtain the initial hidden state z(0), Figure. \ref{fig:decoder} shows the hidden state decoder used to obtain the predicted values at the target timestamps and Figure. \ref{fig:classifier} shows the emotion classifier head.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/workflow.png}
+    \caption{Workflow of the proposed method, it uses a differentiable hermite cubic spline which can be integrated to obtain the hidden state at arbitrary timestamps, the final hidden state is used to obtain class probabilities similar to RNNs.}
+    \label{fig:workflow}
+\end{figure}
+
+\begin{figure}[htbp]
+    \centering
+
+    \begin{subfigure}{0.22\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/cde func.png}
+        \caption{CDE function f(t, z(t))}
+        \label{fig:cdefunc}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.20\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/initial.png}
+        \caption{encoder g(x)}
+        \label{fig:encoder}
+    \end{subfigure}
+    
+        \vspace{0.5cm}
+
+    \begin{subfigure}{0.20\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/readout.png}
+        \caption{Decoder}
+        \label{fig:decoder}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}{0.20\textwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/classifier.png}
+        \caption{Emotion Classifier}
+        \label{fig:classifier}
+    \end{subfigure}
+
+    \caption{The four MLPs used in the model.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Metrics}
+The model was trained using a combination of Mean Squared Error (MSE) loss for the sensor interpolation and, accuracy and cross-entropy loss for the emotion classification.
+
+MSE is shown in Equation. \ref{eq:mse} where \(N\) is the number of reconstructed sensor values, \(y_i\) is the ground truth value, and \(\hat{y}_i\) is the corresponding prediction. Minimizing the MSE encourages the reconstructed values to closely match the original observations.
+
+\begin{equation}
+\mathcal{L}_{\text{MSE}}
+=
+\frac{1}{N}
+\sum_{i=1}^{N}
+\left(\hat{y}_i-y_i\right)^2,
+\label{eq:mse}
+\end{equation}
+
+\begin{equation}
+\mathcal{L}_{\text{CE}}
+=
+-
+\frac{1}{N}
+\sum_{i=1}^{N}
+\sum_{c=1}^{C}
+y_{i,c}
+\log(\hat{p}_{i,c}),
+\label{eq:cross-entropy}
+\end{equation}
+
+Equation. \ref{eq:cross-entropy} shows the cross-entropy loss where \(C\) is the number of classes, \(y_{i,c}\) is the one-hot encoded ground-truth label for sample \(i\), and \(\hat{p}_{i,c}\) is the predicted probability of class \(c\). The loss penalizes incorrect predictions while encouraging the model to assign high probability to the correct class. In inference, argmax is used to select the class.
+
+\begin{equation}
+\text{Accuracy}
+=
+\frac{\text{Number of Correct Predictions}}
+{\text{Total Number of Predictions}}
+=
+\frac{1}{N}
+\sum_{i=1}^{N}
+\left(
+\hat{y}_i = y_i
+\right),
+\label{eq:accuracy}
+\end{equation}
+
+Equation. \ref{eq:accuracy} shows how to calculate accuracy where N is the total number of samples.
+
+\subsection{Hyperparameters}
+Table. \ref{tab:hyperparameters} shows the hyperparameters, batch size was set to 1 as the length of the target sequences varied, to counteract this, gradient accumulation every 8 steps was implemented mimic the effect of having a batch size of 8. Gradient clipping was implemented to avoid exploding gradients,
+
+\begin{table}[htbp]
+\centering
+\caption{Hyperparameters used for training the NCDE model.}
+\label{tab:hyperparameters}
+\begin{tabular}{| l | l |}
+\hline
+\textbf{Hyperparameter} & \textbf{Value} \\
+\hline
+Hidden channels & 128 \\
+\hline
+Input channels & 53 \\
+\hline
+Output channels & 39 \\
+\hline
+Batch size & 1 \\
+\hline
+Gradient Accumulation & 8 \\
+\hline
+Learning rate & $1\times10^{-4}$ \\
+\hline
+Optimizer & AdamW \\
+\hline
+Number of epochs & 20 \\
+\hline
+Gradient clipping max norm & 1.0 \\
+\hline
+Interpolation & Cubic Spline \\
+\hline
+ODE solver & RK4\\
+\hline
+\label{tab:hyperparameters}
+\end{tabular}
+\end{table}
+
+\subsection{Results}
+The model was trained for 20 epochs and the weights with the best MSE loss and cross-entropy loss on valid set were saved along with final epoch weights. The sum of both losses were plotted and are shown in Figure. \ref{fig:plot} while the performance of the model on the test set are listed in Table. \ref{tab:result}. Despite the small MSE loss, the model still performs poorly when interpolating, this is due to the mean of the input sequence being 0, leading to a very small loss and the model output being close to 0. The same effect can be gotten by just taking the mean of the input sequence as the predicted value.
+
+\begin{figure}[!t]
+    \centering
+    \includegraphics[width=\columnwidth]{figures/training plot.png}
+    \caption{Training and validation loss plot.}
+    \label{fig:plot}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{NCDE model performance on test set.}
+\label{tab:hyperparameters}
+\begin{tabular}{| l | l | l | l |}
+\hline
+\textbf{Method} & \textbf{MSE} & \textbf{Cross-Entropy}& \textbf{Accuracy} \\
+\hline
+NCDE model (final epoch) & 0.0992 & 1.7809 & 30.55 \\
+\hline
+NCDE model (best classify loss) & 0.0992 & 1.7809 & 30.55 \\
+\hline
+NCDE model (best MSE loss) & 0.0999 & 1.7913 & 0.2222 \\
+\hline
+\label{tab:result}
+\end{tabular}
+\end{table}
+
+Further comparison between regular cubic spline and NCDE is required to determine if the model is underfitting or if the input sequences does not have enough discriminatory information.
 
 \section{Results}
 
