@@ -459,6 +459,8 @@ As both the baseline and Neural Networks have poor MSE loss, the problems lies i
 
 \section{Discussion}
 
+Extracting features from the radar data and using classical machine learning methods was able to achieve decent results that can still be improved upon once certain limitations are addressed. The most important limitation was the small number of samples, after preprocessing and spliting the frames into windows, the samples were reduced to 600 which is still a small number for training a model. This can be improved by adding more samples to the dataset, or by using data augmentation techniques such as adding noise to the features, or by using generative models to create synthetic samples. Another way to improve performance that was not explored in this work was to use other modalities in the dataset such as Infrared in addition to the radar, this would allow the model to learn patterns of other modalities and use them to estimate the radar patterns
+
 A key limitation of our deep learning approach is that our Transformer encoders were adapted from general-purpose language models. We did not explore specialized point-cloud architectures or lighter temporal designs, nor did we evaluate robustness to unseen physical sensor layouts or run thorough training method ablation studies.
 
 To improve future generalization, several data augmentation strategies could be introduced during training: 1) randomly dropping active sensors out of the 13 radars, 2) downsampling high-density radar frames, 3) randomly dropping temporal frames, 4) cropping recordings to arbitrary durations, 5) injecting Gaussian noise into spatial coordinates, and 6) applying geometric transformations such as 3D rotations, scaling, and translations.

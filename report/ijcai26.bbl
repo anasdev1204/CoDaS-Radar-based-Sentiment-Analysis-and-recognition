@@ -5,25 +5,74 @@ Qurat~Tul Ain, Mubashir Ali, Amna Riaz, Amna Noureen, Muhammad Kamran, Babar Hay
 \newblock Sentiment analysis using deep learning techniques: a review.
 \newblock {\em International Journal of Advanced Computer Science and Applications}, 8(6), 2017.
 
+\bibitem[\protect\citeauthoryear{Alsmadi \bgroup \em et al.\egroup }{2009}]{mlp2009}
+Mutasem~khalil Alsmadi, Khairuddin~Bin Omar, Shahrul~Azman Noah, and Ibrahim Almarashdah.
+\newblock Performance comparison of multi-layer perceptron (back propagation, delta rule and perceptron) algorithms in neural networks.
+\newblock In {\em 2009 IEEE International Advance Computing Conference}, pages 296--299, 2009.
+
+\bibitem[\protect\citeauthoryear{Chen \bgroup \em et al.\egroup }{2020}]{chen2020simple}
+Ting Chen, Simon Kornblith, Mohammad Norouzi, and Geoffrey Hinton.
+\newblock A simple framework for contrastive learning of visual representations.
+\newblock In {\em International conference on machine learning}, pages 1597--1607. PmLR, 2020.
+
+\bibitem[\protect\citeauthoryear{Deng \bgroup \em et al.\egroup }{2018}]{radardetection2018}
+Hai Deng, Zhe Geng, and Braham Himed.
+\newblock Radar target detection using target features and artificial intelligence.
+\newblock In {\em 2018 International Conference on Radar (RADAR)}, pages 1--4, 2018.
+
+\bibitem[\protect\citeauthoryear{Devlin \bgroup \em et al.\egroup }{2019}]{devlin2019bert}
+Jacob Devlin, Ming-Wei Chang, Kenton Lee, and Kristina Toutanova.
+\newblock Bert: Pre-training of deep bidirectional transformers for language understanding.
+\newblock In {\em Proceedings of the 2019 conference of the North American chapter of the association for computational linguistics: human language technologies, volume 1 (long and short papers)}, pages 4171--4186, 2019.
+
 \bibitem[\protect\citeauthoryear{Froehlich \bgroup \em et al.\egroup }{2024}]{radaractivity2019}
 Ann-Christine Froehlich, Desar Mejdani, Lukas Engel, Johanna Braeunig, Christoph Kammel, Martin Vossiek, and Ingrid Ullmann.
 \newblock A millimeter-wave mimo radar network for human activity recognition and fall detection.
 \newblock In {\em 2024 IEEE Radar Conference (RadarConf24)}, pages 1--5, 2024.
+
+\bibitem[\protect\citeauthoryear{Kazemi \bgroup \em et al.\egroup }{2022}]{svm2022}
+Alireza Kazemi, Reza Boostani, Mahmoud Odeh, and Mohammad~Rasmi AL-Mousa.
+\newblock Two-layer svm, towards deep statistical learning.
+\newblock In {\em 2022 International Engineering Conference on Electrical, Energy, and Artificial Intelligence (EICEEAI)}, pages 1--6, 2022.
+
+\bibitem[\protect\citeauthoryear{Kidger \bgroup \em et al.\egroup }{2020}]{kidger2020neuralcde}
+Patrick Kidger, James Morrill, James Foster, and Terry Lyons.
+\newblock {N}eural {C}ontrolled {D}ifferential {E}quations for {I}rregular {T}ime {S}eries.
+\newblock {\em Advances in Neural Information Processing Systems}, 2020.
 
 \bibitem[\protect\citeauthoryear{Manjunath \bgroup \em et al.\egroup }{2018}]{radarobject2018}
 Ankith Manjunath, Ying Liu, Bernardo Henriques, and Armin Engstle.
 \newblock Radar based object detection and tracking for autonomous driving.
 \newblock In {\em 2018 IEEE MTT-S International Conference on Microwaves for Intelligent Mobility (ICMIM)}, pages 1--4, 2018.
 
+\bibitem[\protect\citeauthoryear{Perangin-Angin and Bachtiar}{2021}]{anova2021}
+Dariswan~Janweri Perangin-Angin and Fitra~A. Bachtiar.
+\newblock Classification of stress in office work activities using extreme learning machine algorithm and one-way anova f-test feature selection.
+\newblock In {\em 2021 4th International Seminar on Research of Information Technology and Intelligent Systems (ISRITI)}, pages 503--508, 2021.
+
+\bibitem[\protect\citeauthoryear{Radford \bgroup \em et al.\egroup }{2021}]{radford2021learning}
+Alec Radford, Jong~Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et~al.
+\newblock Learning transferable visual models from natural language supervision.
+\newblock In {\em International conference on machine learning}, pages 8748--8763. PmLR, 2021.
+
 \bibitem[\protect\citeauthoryear{Rokade \bgroup \em et al.\egroup }{2025}]{sentiment2025}
 Gayatri Rokade, Radhe Ughade, and Palash Gaurshettiwar.
 \newblock Deep learning for sentiment analysis.
 \newblock In {\em 2025 4th International Conference on Sentiment Analysis and Deep Learning (ICSADL)}, pages 240--244, 2025.
 
+\bibitem[\protect\citeauthoryear{Ryan and Massaron}{2025}]{xgboost2025}
+Mark Ryan and Luca Massaron.
+\newblock 2025.
+
 \bibitem[\protect\citeauthoryear{Sun \bgroup \em et al.\egroup }{2020}]{radargesture2020}
 Yuliang Sun, Tai Fei, Xibo Li, Alexander Warnecke, Ernst Warsitz, and Nils Pohl.
 \newblock Real-time radar-based gesture detection and recognition built in an edge-computing platform.
 \newblock {\em IEEE Sensors Journal}, 20(18):10706--10716, 2020.
+
+\bibitem[\protect\citeauthoryear{Touvron \bgroup \em et al.\egroup }{2023}]{touvron2023llama}
+Hugo Touvron, Thibaut Lavril, Gautier Izacard, Xavier Martinet, Marie-Anne Lachaux, Timoth{\'e}e Lacroix, Baptiste Rozi{\`e}re, Naman Goyal, Eric Hambro, Faisal Azhar, et~al.
+\newblock Llama: Open and efficient foundation language models.
+\newblock {\em arXiv preprint arXiv:2302.13971}, 2023.
 
 \bibitem[\protect\citeauthoryear{Zuo \bgroup \em et al.\egroup }{2025}]{rfbehavior2025}
 Si~Zuo, Yuqing Song, Sahar Golipoor, Ying Liu, Xujun Ma, and Stephan Sigg.
