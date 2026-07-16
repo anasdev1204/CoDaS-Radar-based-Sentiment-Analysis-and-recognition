@@ -69,7 +69,7 @@ The objective of this paper is to explore the potential of radar-based data for 
 
 This research is based on the experiments conducted by \cite{rfbehavior2025}, in which they introduced "a multimodal radio frequency dataset" for both human behavior recognition and emotion analysis. By conducting a series of experiments on 44 participants, they collected data from 13 radars, 8 RFID tags, LoRa devices and infrared cameras in 4 different campaigns that each focused on a different aspect of human behavior. We will be interested in this paper on identifying and classifying the sentiments in the third campaign that was built around 6 sentiment states: \textit{depression, distraction, excitement, focus, relaxation and stress}.
 
-With the nature of the data collected, multiple approaches can be used to analyze it. The initial approach to handle radar data is to extract features from the radar signals and use them as input to classification models. This approach has been used in previous studies for human activity recognition \cite{radardetection2018} and gesture recognition \cite{radargesture2020}. The features extracted from the radar signals can capture the kinematic, behavioral and spatial characteristics of the target's movement, which can be useful for sentiment analysis. Another approach is [INCLUDE SECOND METHOD BACKGROUND]. Final approach is [INCLUDE THIRD METHOD BACKGROUND].
+With the nature of the data collected, multiple approaches can be used to analyze it. The initial approach to handle radar data is to extract features from the radar signals and use them as input to classification models. This approach has been used in previous studies for human activity recognition \cite{radardetection2018} and gesture recognition \cite{radargesture2020}. The features extracted from the radar signals can capture the kinematic, behavioral and spatial characteristics of the target's movement, which can be useful for sentiment analysis. Another approach is the application of deep learning. Recent self-supervised learning methods have shown that powerful representations can be learned directly from raw data without manual feature engineering. SimCLR \cite{chen2020simple} learns embeddings by maximizing agreement between augmented views of the same sample, producing representations that transfer well to downstream classification tasks. CLIP \cite{radford2021learning} extends this idea by aligning embeddings from different modalities into a shared semantic space using contrastive learning. In the language domain, transformer architectures \cite{vaswani2017attention} have demonstrated the effectiveness of self-attention for modeling complex relationships within sequential data. Motivated by these advances, our method applies transformer-based encoders directly to raw radar and infrared camera data, allowing spatial and temporal patterns to be learned automatically rather than relying on handcrafted features. The final approach is [INCLUDE THIRD METHOD BACKGROUND].
 
 \section{Dataset}
 
@@ -178,48 +178,48 @@ Overall, the superior performance of the SVM highlights the effectiveness of the
 
 \subsection{Dataset}
 
-For the scope of this method, we will utilize the first 3 campaigns of radio and infrared camera from the RF-Behavior dataset. Behaviors with repeated actions, such as walking and running activities from campaign 2 and all 6 emotions from campaign 3, were cut into random sections of 4-6 seconds to roughly match the duration of all other behaviors. We expect it to increase diversity within that behavior and break long duration patterns (e.g. the specific path taken) not associated with that behavior's definition.
+For this method, we utilize the radar and infrared camera from the first three campaigns of the RF-Behavior dataset. Behaviors with highly repetitive actions (e.g., walking and running from campaign 2, and the six emotions from campaign 3) are segmented into random intervals of 4 to 6 seconds to match the typical duration of other activities. This segmentation introduces diversity and prevents the model from memorizing irrelevant long-term patterns, such as a participant's specific walking path, rather than learning the actual behavior itself.
 
 \subsection{Preprocessing: Uniform Batches}
 \subsubsection{Sampling Rate}
 
-Each of the 13 radar sensors detect an arbitrary number of 4D points (density, x, y, z) at arbitrary timestamps. To make the input uniform (batch, time, points, coordinates), the data from all sensors is distributed into evenly spaced time bins. The frame rate is chosen in a way that the number of frames in a behavior recording equals the mean number of points in one frame. This frame rate is empirically calculated by binning each recording from the dataset on all frame rate values ranging from 10 to 30 with 0.1 step size. For a given recording, after binning it on one FPS value, the total number of bins is noted and the mean value of the number of points in each bin is calculated. These two values are collected in two separate arrays called n\_frames and  mean\_n\_points for all FPS values. These arrays are then each normalized by subtracting their respective mean and dividing by their respective standard deviation. Then element wise squared difference is calculated between the corresponding values in the arrays. For each FPS value, the corresponding squared difference is averaged across all behavior recordings. This results in the U shaped plot shown in Figure \ref{fig:radar_fps}. The minimum point occurs at frame rate 18.7 (i.e. time bin of around 53.5ms). At this frame rate, an average behavior recording from this dataset would have the same number of frames as the number of 4D points in an average frame. (i.e. the time and points dimension in the final tensor would be of similar size).
+Each of the 13 radar sensors captures an irregular number of 4D points (comprising density and $X, Y, Z$ coordinates) at arbitrary timestamps. To structure this sparse data into uniform batches, represented as (batch, time, points, coordinates), we group the data into evenly spaced time bins. We calculate the optimal frame rate empirically by testing values from 10 to 30 frames per second (FPS) at 0.1 increments across all recordings. Across all candidate FPS, we normalize the total number of frames and the average number of points per frame, and compute the squared difference between the two corresponding quantities. This optimization yields a U-shaped error curve (Figure~\ref{fig:radar_fps}) with a minimum at 18.7 FPS (representing a 53.5\,ms time bin). At this rate, the average recording's frame count matches its average points-per-frame count, balancing the temporal and spatial dimensions of our input tensor.
 
 \begin{figure}[!t]
     \centering
     \includesvg[width=\columnwidth]{figures/radar_fps}
-    \caption{Optimizing the frame rate for radar.}
+    \caption{Optimization curve showing how we balance the number of radar frames and spatial points per frame.}
     \label{fig:radar_fps}
 \end{figure}
 
 \subsubsection{Jagged Input Tensors}
 
-The duration of a behavior recording can be variable within a behavior class and across classes. So the tensor representation of sensor data from any modality will be jagged across time. we handle this by padding the shorter sequences on the right side (larger indices) of the input tensor by copies of the last frame of the recording. During this experiment, we did not explore the application of other padding strategies.
+Because recording durations vary across samples, the resulting tensors are uneven (jagged) over time. We resolve this by padding shorter sequences on the right using copies of the recording's final frame. In this work, we did not explore the application of other padding strategies.
 
-For both radar and infrared modalities, the number of points within a frame depends firstly on the number of sensors in use. In this dataset, there are 13 radar sensors but not all recordings contain data from all of the sensors. Some radar sensors also may not provide any input due to high distance. The infrared data only has 3 upper body landmarks in the first campaign and the following campaigns include 3 additional landmarks from the lower body. So, if data from two different campaigns is used in training, a variability in the points dimension of infrared data has to be managed. Furthermore, in downstream applications, the sensor setup may be totally different from the campaigns of RF-Behavior. Secondly, each radar sensor can return a variable number of points in any time bin. To manage the variability in the points dimension, we split a each batch of behavior \emph{recordings} into numerous mini batches of \emph{frames} each have the same number of points. Then we process each pseudo batch separately and then reorganize and concatenate the output tensors.
+Another challenge is that the number of spatial points per frame varies based on active sensors and the specific campaign. Only three upper-body landmarks are tracked via the infrared camera in campaign 1, whereas campaigns 2 and 3 add three lower-body landmarks. Furthermore, individual radar sensors often return varying amounts of data depending on the participant's distance. To handle this structural variability without locking the network into a fixed layout, we divide each batch of recordings into smaller mini-batches of individual frames that share an identical point count. These uniform subsets are processed independently through the network before being reassembled and combined into the final output tensors.
 
 \subsection{Model}
 
 \subsubsection{Baseline Architecture: Transformers}
 
-We propose using two stacks of transformers to collapse the variable time and points dimensions to size 1. (See Figure \ref{fig:model_architecture} for a visual representation of the model architecture.)
+We design a neural network architecture using two sequential Transformer stacks to condense the variable time and spatial point dimensions (see Figure~\ref{fig:model_architecture}) to size one.
 
 \begin{figure}[!t]
     \centering
     \includesvg[width=\columnwidth]{figures/model_architecture_configurations}
-    \caption{Deep learning model pipeline. All configurations are applicable to infrared camera but only (A) can process radar.}
+    \caption{Deep learning pipelines. The model uses a spatial encoder to process 3D points in each frame and a temporal encoder to process sequence of latent vectors. All configurations work with the infrared camera, but only configuration (A) is compatible with radar.}
     \label{fig:model_architecture}
 \end{figure}
 
-For the points dimension, we implement a Point Cloud Encoder (PCE) consisting of a linear projection layer followed by a BERT \cite{devlin2019bert} encoder implementation from the HuggingFace library. It treats a collection of points from a single frame as a sequence of tokens and applies self attention to learn the relationships between them which is then pooled into a single embedding vector per frame. For radar, the order of the points contains no meaning so we do not use any positional encoding. For infrared, there is still no information in the exact sequence of the points so sinusoidal or rotary positional encoding are not used. However, learned positional embeddings can be added to the projection of the landmarks to help the model identify which body part is at what coordinates. The PCE takes an input of the shape (batch, points, coordinates) and outputs a tensor of the shape (batch, hidden\_size).
+To process the points dimension, we build a Point Cloud Encoder (PCE) that uses a linear projection layer followed by a BERT \cite{devlin2019bert} self-attention encoder. The PCE treats the points in a single frame as a sequence of tokens, learning their spatial relationships to produce a single vector for that frame. Because spatial points have no sequential order, we omit positional encodings for radar. For the infrared camera, we can use learned positional embeddings added to the landmark projections to help the model identify specific body parts. The PCE maps inputs of shape (batch, points, coordinates) to a representation of shape (batch, hidden\_size).
 
-For the time dimension, we implement a Temporal Encoder consisting of a linear projection layer followed by a Llama \cite{touvron2023llama} decoder borrowed from the HuggingFace library. The time dimension obviously contains sequential information and llama models use rotary positional embeddings and causal attention to learn the relationships between input tokens (frames in our case). The output of llama model is another sequence of vectors so we apply pooling again to obtain a single embedding vector for the entire recording. The padding added to the time dimension during preprocessing is handled by an attention mask that marks the real frames with 1s and the padding frames with 0s. Our temporal encoder expects an input of the shape (batch, time, hidden\_size) and outputs a tensor of the shape (batch, hidden\_size).
+To process the time dimension, we implement a Temporal Encoder consisting of a linear projection layer followed by a LLaMA \cite{touvron2023llama} decoder. To capture how physical gestures unfold over time, this encoder uses rotary positional embeddings and causal attention to model sequential relationships across frames. We apply a pooling operation over the output vectors to generate a single summary embedding for the entire recording. An attention mask ensures that the padding frames added during preprocessing are ignored. The temporal encoder processes inputs of shape (batch, time, hidden\_size) and outputs a tensor of shape (batch, hidden\_size).
 
-Since infrared data has a high sampling rate and the landmarks maintain their order in the input (e.g. left shoulder always appears at the first index), we also define an optional 1D convolution based downsampling block that scans across the time dimension with a stride of 2 and reduces the number of frames by half. The channel dimension can be all coordinates of all landmarks from a single frame flattened into a single vector (configuration \ref{fig:model_architecture}(C)) but this restricts the model architecture to a fixed number of points. Alternatively, the channel dimension can be the coordinates of a single landmark (configuration \ref{fig:model_architecture}(B)) and the points dimension can be transposed and merged into the batch dimension (and split back later). This way the same weights are applied to all landmarks and the model is also free to handle a variable number of landmarks.
+For the infrared camera, we also design an optional 1D convolutional downsampling block with a stride of 2 to halve the temporal frame rate and improve efficiency. This block can first flatten all coordinates of all landmarks per frame into a single vector (Configuration \ref{fig:model_architecture}C), but that requires a fixed sensor setup. Alternatively, Configuration \ref{fig:model_architecture}B processes each landmark independently using shared weights, allowing the use of PCE to handle any number of tracking points.
 
 \subsubsection{Architectural Hyperparameters}
 
-The transformer architecture is highly configurable and can be scaled in multiple dimensions. We define a list of possible values for each hyper parameter (see table \ref{tab:architectural}) and then sample 10,000 random combinations and measure the total number of parameters in the resulting model. Then the models are distributed into 20 geometrically spaced bins ranging from 70k to 100M parameters. We then sequentially process one random model from each bin and evaluate its performance.
+To optimize this highly scalable Transformer architecture, we define a search space for its key hyper-parameters (Table~\ref{tab:architectural}). We calculate model sizes for 10,000 randomly sampled configurations and group them into 20 geometrically spaced bins ranging from 70k to 100M parameters. We then sequentially process one random model from each bin and evaluate its performance.
 
 \begin{table}[!t]
 \centering
@@ -234,34 +234,32 @@ The transformer architecture is highly configurable and can be scaled in multipl
 \# Transformer blocks & 1-6 \\
 \# Attention Heads & $2^i$ (i = 2, ..., 5) \\
 Embedding Size & $2^i$ (i = 4, ..., 10) \\
-Positional Embeddings in infrared BERT & Yes/No \\
 Pooling Strategy & Mean, CLS, EOS \\
+Positional Embeddings (infrared BERT) & Yes/No \\
 \bottomrule
 \end{tabular}
-\caption{Architectural hyperparameters.}
+\caption{Architectural hyper-parameters evaluated during grid search.}
 \label{tab:architectural}
 \end{table}
 
 \subsubsection{Supervised Classification}
 
-To compare the sampled models and optimize the hyperparameters, a simple supervised classification task is used for classifying complete recordings among different behavior classes. The dataset is split into train, validation and test sets using the user\_ids to avoid any personal style or patterns of a given user being leaked to the model during training. We place 4 random users in the test set and 2 users in the validation set with each user having performed 8 repetitions. Rest of the recordings are used for training (approx. 160 recordings per class). We set output projection size of the above model to the number of behavior classes, train it with cross entropy loss, while using an early stopping strategy with a patience of 5 epochs. The model is trained for a maximum of 100 epochs with a batch size of 32 and a learning rate of $10^-3$ with the AdamW optimizer. The model with the lowest validation loss is saved and evaluated on the test set using weighted classification F1 score. All experiments were executed on an NVIDIA GeForce RTX 4070 Laptop GPU with 8 GB of GDDR6 VRAM.
+We evaluate and tune these configurations using a supervised classification task. To avoid leakage of an individual's quirks, we partition the dataset by user IDs. The test set contains four random users, the validation set contains two, and the remaining users are allocated to the training set (approximately 160 recordings per behavior class). We set output projection size of the above model to the number of behavior classes. The network is trained using cross-entropy loss, the AdamW optimizer (learning rate of $10^{-3}$, batch size of 32), and early stopping with a patience of 5 epochs. We save the model with the lowest validation loss and evaluate it on the test set using a weighted F1-score. All experiments were run on an NVIDIA GeForce RTX 4070 Laptop GPU (8\,GB GDDR6 VRAM).
 
 \subsubsection{Unsupervised Contrastive Learning}
 
-Downstream applications of a model that classifies radar or infrared recordings among the classes of RF-Behavior seem limited. To match the generalized input capability of our model, we explore the possibility of having a generalized output capability as well. Typically, the classification head of a model can be removed to use it as a feature extractor for transfer learning or fine-tuning. But training for rigid labels may prime the model to ignore many other latent features it could have been able to extract so we train an embedding model instead of a classification model.
-
-We set the model output size to 256 and perform a grid search over other hyperparameters. We train these models in a semi supervised fashion using the NT-Xent loss introduced in the SimCLR framework \cite{chen2020simple} to increase the cosine similarity between embedding vectors of different instances of the same class and decrease their similarity with all other instances of other classes in the batch. We split the dataset by completely moving two behaviors to validation and two behaviors to test sets. We pick the model with the lowest validation loss and then evaluate it's embeddings in a 1-shot fashion on the 2 unseen test classes. The NT-Xent loss for a positive pair $(i, j)$ and temperature $\tau$ is
+To make the model useful beyond the specific behaviors in the RF-Behavior dataset, we evaluate its ability to learn general-purpose features without relying on rigid class labels. We map the final output to a 256-dimensional space and train the network in a semi-supervised manner using the NT-Xent loss from SimCLR \cite{chen2020simple} with the rest of the training parameters held the same as the supervised approach. This loss function pulls the embedding vectors of different recordings of the same behavior closer together in vector space, while pushing different behaviors far apart. We evaluate this approach using 1-shot classification on two unseen test behaviors, holding out another two for validation. The NT-Xent loss for a positive pair $(i, j)$ and temperature $\tau$ is defined as:
 \begin{equation}
     \ell_{i,j} = -\log \frac{\exp(\text{sim}(\mathbf{z}_i, \mathbf{z}_j)/\tau)}{\sum_{k=1}^{2N} \mathbb{1}_{[k \neq i]} \exp(\text{sim}(\mathbf{z}_i, \mathbf{z}_k)/\tau)} \,,
 \end{equation}
 
-One of the modalities will have a lower performance than the other and in order to enable the model for that modality to learn from all other data that we have available, we align the embedding space of all modalities and train both models jointly. Since the sensor data from different modalities was collected simultaneously and radar and infrared data are already synchronized, we can use a symmetric contrastive loss (like CLIP \cite{radford2021learning}) to align the two modalities. We map data from all sensor types onto embedding vectors of the same size and use cross entropy to increase the similarity between embeddings from different modalities but of the exact same recording instance and decrease the similarity with any other instance of the same class.
+Because one of the modalities will be more difficult to model than the other, we align the embedding spaces of both modalities so the weaker sensor can learn from the stronger one. We project both types of sensor data into vectors of the same size and with a symmetric contrastive loss, similar to CLIP \cite{radford2021learning}, we train both models jointly. Using cross entropy, this loss function maximizes the similarity between simultaneous radar and infrared recordings of the same event while minimizing similarity across different events.
 
 \subsection{Results}
 
-Through our grid search, we discovered that using a classification token (CLS) pooling in the point cloud encoder (PCE) collapses the model's representation and all inputs are mapped to almost the same vector by the model. We also measured that by downsampling the time dimension with convolutional blocks in the infrared model, the model inference and convergence time is significantly reduced during training as scaled dot product attention is quadratically related to the sequence length. A heavier PCE also increases the inference time for radar models. We expect this to be caused by our iterative handling of jagged points dimension. For unsupervised models, we observed that mean pooling outperforms the end-of-sequence token (EOS) pooling and that a low training loss is also important and not just a low validation loss for high test performance. We interpret stopping early for a low validation loss at a high training loss as noisy and lacking convergence.
+Our hyperparameter search revealed that using classification token (CLS) pooling in the PCE collapses the model's output space, mapping all inputs to nearly identical vectors. Conversely, using convolutional blocks to downsample the temporal dimension in the infrared camera model drastically reduces training time, as the self-attention mechanism's computational cost scales quadratically with sequence length. For radar models, a larger PCE increases inference time due to our mini-batched-frames by mini-batched-frames processing of jagged points dimension. For unsupervised models, mean pooling consistently out-performed end-of-sequence (EOS) pooling. We also observed that, for unsupervised models, minimizing training loss, rather than stopping prematurely solely based on validation loss, is critical for test performance, as overly early termination leads to noisy, un-converged models.
 
-The results for the best supervised models are shown in Table \ref{tab:supervised_results} and the distribution of all our trained models is illustrated via a scatter plot in Figure \ref{fig:f1_scatter_plot}.
+Supervised results are summarized in Table~\ref{tab:supervised_results}, with the overall F1-score distribution plotted in Figure~\ref{fig:f1_scatter_plot}.
 
 \begin{table}[!t]
 \centering
@@ -285,20 +283,20 @@ C1+C2+C3 & 37 & Radar    & 1,738,021 & 71.76\% &  1 \\
 C1+C2+C3 & 37 & Infrared &   165,269 & 78.29\% &  7 \\
 \bottomrule
 \end{tabular}
-\caption{Grid Search: Supervised Classification Results.}
+\caption{Grid search: Performance metrics of supervised classification models.}
 \label{tab:supervised_results}
 \end{table}
 
 \begin{figure}[!t]
     \centering
     \includesvg[width=\columnwidth]{figures/f1_scatter_plot}
-    \caption{Scatter plot of F1-scores of supervised classification models from grid search.}
+    \caption{F1-score distribution of our supervised models. Each point represents a unique model configuration evaluated during our hyperparameter search.}
     \label{fig:f1_scatter_plot}
 \end{figure}
 
-For campaign 3, in addition to grid search, we also employed genetic search to crossover and mutate the hyperparameters of two out of top 5 models to create a new model in an attempt to maximize the classification F1 score but no new model was discovered within our compute budget that out performed the existing ones. We expect this could be due to subtle nature of the behaviors in this campaign and we might need more landmarks or sensors to capture the micro-movements associated with these behaviors. We also observed that the radar modality consistently underperformed compared to infrared modality across all campaigns, which could be attributed to the lower resolution, sparse sampling and higher noise levels in radar data.
+For the challenging emotion classes in campaign 3, we attempted to improve accuracy by using a genetic algorithm to mutate and combine the top-performing architectures. However, this did not yield better models within our computational limits. We expect this likely stems from the subtle, microscopic nature of emotional expressions, which may require denser sensor arrays or more tracking landmarks to capture. Across all campaigns, the radar performed worse than the infrared camera, which we attribute to the radar's lower spatial resolution, sparser data collection, and higher signal noise.
 
-The unsupervised models are evaluated for one-shot classification. All samples in the test set are embedded and one instance from each class is designated as the reference embedding and the rest are used as query embeddings. The cosine similarity between each query and all references is calculated and the class of the reference with the highest similarity is assigned to the query. This is repeated in a k-fold manner by choosing each sample as the reference once. The results for the best unsupervised models are shown in Table \ref{tab:unsupervised_results}. The unsupervised models show that they have to potential to generalize to unseen behaviors and achieve comparable classification performance with just one reference recording per class and also fewer model parameters.
+Our unsupervised models were evaluated using 1-shot classification, where we measure cosine similarity for each query recording with one reference recording per unseen class. This evaluation was repeated using cross-validation across all samples. The results (Table~\ref{tab:unsupervised_results}) show that the unsupervised models can generalize remarkably well to entirely new behaviors, even matching supervised performance while requiring only a single reference example and significantly fewer parameters.
 
 \begin{table}[!t]
 \centering
@@ -314,7 +312,7 @@ C2    &  6-2-2 & Radar    &    93,440 & 77.51\% & 14 \\
 C2    &  6-2-2 & Infrared &   923,280 & 93.48\% & 31 \\
 \bottomrule
 \end{tabular}
-\caption{Grid Search: Unsupervised 1-Shot Classification Results. (\# Behaviors column follows the format: \#train-\#valid-\#test)}
+\caption{Grid search: One-shot classification results for unsupervised models. The behaviors column indicates the split of train, validation, and test classes.}
 \label{tab:unsupervised_results}
 \end{table}
 
@@ -381,9 +379,11 @@ Further comparison between regular cubic spline and NCDE is required to determin
 
 \subsection{Discussion}
 
-For better generalization, the recordings in the training set can be augmented by 1) excluding random sensors from the 13 radars, 2) dropping random points from the heavier radar frames, 3) dropping random frames, 4) truncating the recordings to a random length, 5) adding Gaussian noise to the points, and 6) applying random geometric transformations such as 3D rotation, translation and scaling.
+A key limitation of our deep learning approach is that our Transformer encoders were adapted from general-purpose language models. We did not explore specialized point-cloud architectures or lighter temporal designs, nor did we evaluate robustness to unseen physical sensor layouts or run thorough training method ablation studies.
 
-Our deep learning components are compatible with all raw modalities of RF-Behavior. A unified model architecture could be designed with a shared temporal encoder head and modality specific necks composed of a downsampler and/or a point cloud encoder. This single model could be trained on the entire dataset including all modalities and behavior classes simultaneously to learn a generalized embedding space. The embedding space could also be aligned with a language model embedding space to enable zero-shot classification of behaviors based on textual descriptions.
+To improve future generalization, several data augmentation strategies could be introduced during training: 1) randomly dropping active sensors out of the 13 radars, 2) downsampling high-density radar frames, 3) randomly dropping temporal frames, 4) cropping recordings to arbitrary durations, 5) injecting Gaussian noise into spatial coordinates, and 6) applying geometric transformations such as 3D rotations, scaling, and translations.
+
+Additionally, our deep learning modules are compatible with all raw data formats in the RF-Behavior dataset. A unified model could be constructed using a single shared temporal head paired with sensor-specific input blocks (such as downsamplers or point cloud encoders). This would allow a single network to be trained on all sensor types and behaviors simultaneously. Finally, aligning this sensor embedding space with a pre-trained text encoder would unlock zero-shot classification, potentially allowing the model to recognize brand-new behaviors based purely on written descriptions.
 
 \bibliographystyle{named}
 \bibliography{ijcai26}
