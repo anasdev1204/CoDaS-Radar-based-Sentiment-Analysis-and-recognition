@@ -69,7 +69,7 @@ The objective of this paper is to explore the potential of radar-based data for 
 
 This research is based on the experiments conducted by \cite{rfbehavior2025}, in which they introduced "a multimodal radio frequency dataset" for both human behavior recognition and emotion analysis. By conducting a series of experiments on 44 participants, they collected data from 13 radars, 8 RFID tags, LoRa devices and infrared cameras in 4 different campaigns that each focused on a different aspect of human behavior. We will be interested in this paper on identifying and classifying the sentiments in the third campaign that was built around 6 sentiment states: \textit{depression, distraction, excitement, focus, relaxation and stress}.
 
-With the nature of the data collected, multiple approaches can be used to analyze it. The initial approach to handle radar data is to extract features from the radar signals and use them as input to classification models. This approach has been used in previous studies for human activity recognition \cite{radardetection2018} and gesture recognition \cite{radargesture2020}. The features extracted from the radar signals can capture the kinematic, behavioral and spatial characteristics of the target's movement, which can be useful for sentiment analysis. Another approach is the application of deep learning. Recent self-supervised learning methods have shown that powerful representations can be learned directly from raw data without manual feature engineering. SimCLR \cite{chen2020simple} learns embeddings by maximizing agreement between augmented views of the same sample, producing representations that transfer well to downstream classification tasks. CLIP \cite{radford2021learning} extends this idea by aligning embeddings from different modalities into a shared semantic space using contrastive learning. In the language domain, transformer architectures \cite{vaswani2017attention} have demonstrated the effectiveness of self-attention for modeling complex relationships within sequential data. Motivated by these advances, our method applies transformer-based encoders directly to raw radar and infrared camera data, allowing spatial and temporal patterns to be learned automatically rather than relying on handcrafted features. The final approach is [INCLUDE THIRD METHOD BACKGROUND].
+With the nature of the data collected, multiple approaches can be used to analyze it. The initial approach to handle radar data is to extract features from the radar signals and use them as input to classification models. This approach has been used in previous studies for human activity recognition \cite{radardetection2018} and gesture recognition \cite{radargesture2020}. The features extracted from the radar signals can capture the kinematic, behavioral and spatial characteristics of the target's movement, which can be useful for sentiment analysis. Another approach is the application of deep learning. Recent self-supervised learning methods have shown that powerful representations can be learned directly from raw data without manual feature engineering. SimCLR \cite{chen2020simple} learns embeddings by maximizing agreement between augmented views of the same sample, producing representations that transfer well to downstream classification tasks. CLIP \cite{radford2021learning} extends this idea by aligning embeddings from different modalities into a shared semantic space using contrastive learning. In the language domain, transformer architectures \cite{vaswani2017attention} have demonstrated the effectiveness of self-attention for modeling complex relationships within sequential data. Motivated by these advances, our method applies transformer-based encoders directly to raw radar and infrared camera data, allowing spatial and temporal patterns to be learned automatically rather than relying on handcrafted features. The final approach is to use deep learning models for interpolation which can then be used for classification and forecasting \cite{jhin2022exitextrapolationinterpolationbasedneural}, interpolation is very helpful as it can fill in missing data which is common in sensors \cite{10.1108/IMDS-08-2022-0468}. Interpolation also helps in converting irregular time-series to a time-series with regularly spaced intervals.
 
 \section{Dataset}
 
@@ -319,14 +319,14 @@ C2    &  6-2-2 & Infrared &   923,280 & 93.48\% & 31 \\
 \section{Method 3: Neural Network-Based Interpolation and Classification}
 The radar-based dataset consists of 13 separate radar sensors each recording data at different timestamps, in order to unify the sensors to a single timeline, interpolation is required. This method consists of performing interpolation using Neural Networks and comparing with classical methods, emotion classification is also performed.
 \subsection{Preprocessing}
-Using the preprocessing sample code provided in the dataset, the radar sensors' data were converted to 39 XYZ coordinates, afterwards, the timestamps were rounded to 1 decimal place and the sensors concatenated together into a single csv file for each user for each emotion. These were then concatenated together to get a singular csv file containing the processed data of every user, emotion and sensor. Grouping by user\_id and emotion, a sparse sequence of observations from all the sensors combined can be retrieved.
+Using the preprocessing sample code provided in the dataset, each of the 13 radar sensors' data were converted into 3 values corresponding to the XYZ axis, afterwards, the timestamps were rounded to 1 decimal place and the sensors concatenated together into a single csv file resulting in 39 values at each timestamp for each user for each emotion. These were then concatenated together to get a singular csv file containing the processed data of every user, emotion and sensor. Grouping by user\_id and emotion, a sparse sequence of observations from all the sensors combined can be retrieved.
 
-To avoid any overlap between dataset splits and to test on unseen users, the user\_ids were split into train, valid and test sets with ratios 0.6/0.2/0.2 . Normalization is performed by setting mean to 0 to allow the model to only train on the residual. Min-max normalization is applied to the timestamps to set the minimum to 0 and maximum to 1.
+To avoid any overlap between dataset splits and to test on unseen users, the user\_ids were split into train, valid and test sets with ratios 60\%/20\%/20\% . Normalization is performed by setting mean to 0 to allow the model to only train on the residual. Min-max normalization is applied to the timestamps to set the minimum to 0 and maximum to 1.
 
-While training the models, 0.1 to 0.3 of the sequence is randomly set aside as the target sequence, this is set to 0.2 for validation and testing with a static random state for reproducibility. An observation mask containing the non-Nan values is obtained for both the input and target sequence, this is combined with the input sequence to allow the model to focus on observations and is used to train the model using only non-Nan target values. Last Observation Carried Forward (LOCF) is then applied on the data to counter-act the sparsity of the dataset.
+While training the models, 10\% to 30\% of the sequence is randomly set aside as the target sequence, this is set to 20\% for validation and testing with a static random state for reproducibility. An observation mask containing the non-Nan values is obtained for both the input and target sequence, this is combined with the input sequence to allow the model to focus on observations and is used to train the model using only non-Nan target values. Last Observation Carried Forward (LOCF) is then applied on the data which fills NaN or empty values with the last previously observed value in the sequence to counter-act the sparsity of the dataset.
 
 \subsection{Model Selection}
-The proposed method consists of training a Neural Controlled Differential Equation (NCDE) model by Kidger et. al \cite{kidger2020neuralcde} for interpolation and classification using the torchcde library. It was selected due to it's ability to deal with irregular timestamps. As shown in Figure. \ref{fig:ncde}, the main advantage over Recurrent Neural Networks (RNNs) is the continuous update of it's hidden state, this is achieved by solving and integrating the differential equation in Equation. \ref{eq:differential} where \(f(t,z(t))\) and \(g(x_0)\) are Neual Networks (NNs) and X is a Hermite cubic splines interpolation of sparse input sequence.
+The selected models used for interpolation and classification are Neural Controlled Differential Equation (NCDE) model by Kidger et. al \cite{kidger2020neuralcde}, a 1D U-Net model and a Temporal Convolutional Network (TCN). NCDE was selected due to it's ability to deal with irregular timestamps and obtain output at any timestamp. As shown in Figure. \ref{fig:ncde}, the main advantage over Recurrent Neural Networks (RNNs) is the continuous update of it's hidden state. This continuous update is achieved by solving and integrating the differential equation in Equation. \ref{eq:differential} where \(f(t,z(t))\) and \(g(x_0)\) are Neual Networks (NNs) and X is a cubic Hermite spline interpolation of the sparse input sequence to make it a differentiable continuous data stream. A cubic Hermite spline is a piecewise function where each piece is a third degree polynomial whose values and first derivatives at the endpoints of the domain interval are the same as the given function or input \cite{kreyszig11}.
 
 \begin{equation}
     \frac{dz(t)}{dt}
@@ -341,11 +341,19 @@ The proposed method consists of training a Neural Controlled Differential Equati
 \begin{figure}[!t]
     \centering
     \includegraphics[width=\columnwidth]{figures/NCDE.png}
-    \caption{Comparison of hidden state updates between RNN and NCDE.}
+    \caption{Comparison of hidden state updates between RNN and NCDE taken from the NCDE paper.}
     \label{fig:ncde}
 \end{figure}
 
-Shown in Figure. \ref{fig:workflow} is the workflow of the proposed method, it starts with interpolating the input sequence using a differentiable hermite cubic spline to obtain a continuous control data X, whose first instance x(0) is passed through an MLP to get z(0) and both are fed into the cdeint function along with the target timestamps dictating at what time we want the hidden states z(t), the output sequence is fed into an MLP decoder to get the predicted values while the final hidden state is fed into an MLP classifier to get emotion probabilities.
+A U-Net is a Convolutional Neural Network (CNN) whose input and output are the same shape achieved by continually downsampling via Max pooling and then upsampled using transpose convolution layers with skip connections resulting in a U shape, the classifier head is attached to the bottleneck located between the downsampling and upsampling layers and consists of an adaptive average pooling to reduce the size to 1 along with a simple MLP classifier. Instead of the predicted values being obtained separately by inputting target timestamps, the input sequence has dummy values at those positions or indices and later retrieved from the output at those same indices. The model is expected to fill in the blanks, so to speak.
+
+A TCN is a CNN with causal padding where successive layers have greater dilation allowing each point of the output to see the entire most of the surrounding input sequence. The classifier head is a linear layer attached to the end of the output sequence. It has the same input as U-Net where the model learns to fill the dummy values at target timestamps.
+
+To compare performance, the baseline is a scikit-learn interpolator with a 3 degree spline transformer with 4 knots followed by a ridge with $\alpha=0.001$. This will be used to compare the interpolation performance. 
+U-Net and TCN were also trained in an ensemble with the baseline where the loss was calculated using model output and the difference between target values and interpolated values, the mean was not normalized to mean 0 for these experiments.
+
+
+Shown in Figure. \ref{fig:workflow} is the workflow of the NCDE model, it starts with interpolating the input sequence using a differentiable hermite cubic spline to obtain a continuous control data X, whose first instance x(0) is passed through an MLP to get z(0) and both are fed into the cdeint function along with the target timestamps dictating at what time we want the hidden states z(t), the output sequence is fed into an MLP decoder to get the predicted values while the final hidden state is fed into an MLP classifier to get emotion probabilities.
 
 \begin{figure}[!t]
     \centering
@@ -355,7 +363,76 @@ Shown in Figure. \ref{fig:workflow} is the workflow of the proposed method, it s
 \end{figure}
 
 \subsection{Metrics}
-The model was trained using a combination of Mean Squared Error (MSE) loss for the sensor interpolation and Cross-Entropy loss for the emotion classification. Accuracy was used to measure the classification performance of the model on the test set.
+The model was trained using a combination of Mean Squared Error (MSE) loss for the sensor interpolation and Cross-Entropy loss for the emotion classification. Accuracy was used to measure the classification performance of the model on the test set, it was used in place of more complex metrics like F1-score due to the balanced nature of the dataset i.e. the number of samples for each emotion class are roughly equal.
+
+MSE is shown in Equation. \ref{eq:mse} where \(N\) is the number of reconstructed sensor values, \(y_i\) is the ground truth value, and \(\hat{y}_i\) is the corresponding prediction. Minimizing the MSE encourages the reconstructed values to closely match the original observations.
+
+\begin{equation}
+\mathcal{L}_{\text{MSE}}
+=
+\frac{1}{N}
+\sum_{i=1}^{N}
+\left(\hat{y}_i-y_i\right)^2,
+\label{eq:mse}
+\end{equation}
+
+\begin{equation}
+\mathcal{L}_{\text{CE}}
+=
+-
+\frac{1}{N}
+\sum_{i=1}^{N}
+\sum_{c=1}^{C}
+y_{i,c}
+\log(\hat{p}_{i,c}),
+\label{eq:cross-entropy}
+\end{equation}
+
+Equation. \ref{eq:cross-entropy} shows the cross-entropy loss where \(C\) is the number of classes, \(y_{i,c}\) is the one-hot encoded ground-truth label for sample \(i\), and \(\hat{p}_{i,c}\) is the predicted probability of class \(c\). The loss penalizes incorrect predictions while encouraging the model to assign high probability to the correct class. In inference, argmax is used to select the class.
+
+\begin{equation}
+\text{Accuracy}
+=
+\frac{\text{Number of Correct Predictions}}
+{\text{Total Number of Predictions}}
+=
+\frac{1}{N}
+\sum_{i=1}^{N}
+\left(
+\hat{y}_i = y_i
+\right),
+\label{eq:accuracy}
+\end{equation}
+
+Equation. \ref{eq:accuracy} shows how to calculate accuracy where N is the total number of samples.
+
+\subsection{Hyperparameters}
+Table. \ref{tab:hyperparameters} shows the hyperparameters, batch size was set to 1 as the length of the target sequences varied, to counteract this, gradient accumulation every 8 steps was implemented mimic the effect of having a batch size of 8. Gradient clipping was implemented to avoid exploding gradients,
+
+\begin{table}[!t]
+\centering
+
+\begin{tabular}{l l}
+\toprule
+\textbf{Hyperparameter} & \textbf{Value} \\
+\midrule
+Dataset splits & 60\%/20\%/20\% \\
+Hidden channels & 128 \\
+Input channels & 53 \\
+Output channels & 39 \\
+Batch size & 1 \\
+Gradient Accumulation & 8 \\
+Learning rate & $1\times10^{-4}$ \\
+Optimizer & AdamW \\
+Number of epochs & 20 \\
+Gradient clipping max norm & 1.0 \\
+Interpolation & Cubic Spline \\
+ODE solver & RK4\\
+\bottomrule
+\label{tab:hyperparameters}
+\end{tabular}
+\caption{Hyperparameters used for training the NCDE model.}
+\end{table}
 
 \subsection{Results}
 \begin{table}[!t]
@@ -364,26 +441,33 @@ The model was trained using a combination of Mean Squared Error (MSE) loss for t
 \toprule
 \textbf{Method} & \textbf{MSE} & \textbf{Cross-Entropy}& \textbf{Accuracy} \\
 \midrule
-NCDE model (final epoch) & 0.0992 & 1.7809 & 30.55 \\
-NCDE model (best classify loss) & 0.0992 & 1.7809 & 30.55 \\
-NCDE model (best MSE loss) & 0.0999 & 1.7913 & 22.22 \\
+Baseline & 0.0962 & - & - \\
+NCDE model & 0.0999 & 3.6167 & 44.44 \\
+U-Net & 0.0995 & 1.7920 & 16.66 \\
+TCN & 0.0992 & 1.7444 & 25 \\
+U-Net + Baseline & 0.0962 & 1.7920 & 16.66 \\
+TCN + Baseline & 0.1039 & 1.6496 & 33.33 \\
 \bottomrule
 \end{tabular}
 \caption{NCDE model performance on test set.}
 \label{tab:result}
 \end{table}
 
-The model was trained for 20 epochs and the weights with the best MSE loss and cross-entropy loss on valid set were saved along with final epoch weights. The performance of the model on the test set is listed in Table. \ref{tab:result}. Despite the small MSE loss, the model still performs poorly when interpolating, this is due to the mean of the input sequence being 0, leading to a very small loss and the model output being close to 0. The same effect can be gotten by just taking the mean of the input sequence as the predicted value.
+The models were trained for 20 epochs and the weights with the best MSE loss and cross-entropy loss on valid set were saved along with final epoch weights. The performance of the models on the test set is listed in Table. \ref{tab:result}. None of the models were able to surpass the baseline, the closest was by the U-Net and baseline ensemble, meaning that the Neural Networks were unable to improve upon the cubic spline. The best classification performance was by the NCDE model at 44.44\% accuracy.
 
-Further comparison between regular cubic spline and NCDE is required to determine if the model is underfitting or if the input sequences does not have enough discriminatory information.
+As both the baseline and Neural Networks have poor MSE loss, the problems lies in the dataset, specifically, the small number of samples (~181 samples) and possibly may not have enough discriminatory information. The poor classification performance can partly be attributed to the model performing both classification and interpolation, additionally, classification was not performed on the entire sequence due to setting 20\% aside for interpolation resulting in less information for the classifier.
 
-\subsection{Discussion}
+\section{Discussion}
 
 A key limitation of our deep learning approach is that our Transformer encoders were adapted from general-purpose language models. We did not explore specialized point-cloud architectures or lighter temporal designs, nor did we evaluate robustness to unseen physical sensor layouts or run thorough training method ablation studies.
 
 To improve future generalization, several data augmentation strategies could be introduced during training: 1) randomly dropping active sensors out of the 13 radars, 2) downsampling high-density radar frames, 3) randomly dropping temporal frames, 4) cropping recordings to arbitrary durations, 5) injecting Gaussian noise into spatial coordinates, and 6) applying geometric transformations such as 3D rotations, scaling, and translations.
 
 Additionally, our deep learning modules are compatible with all raw data formats in the RF-Behavior dataset. A unified model could be constructed using a single shared temporal head paired with sensor-specific input blocks (such as downsamplers or point cloud encoders). This would allow a single network to be trained on all sensor types and behaviors simultaneously. Finally, aligning this sensor embedding space with a pre-trained text encoder would unlock zero-shot classification, potentially allowing the model to recognize brand-new behaviors based purely on written descriptions.
+
+
+One of the biggest limitations of interpolation was the small number of samples, this can be somewhat alleviated by adding the other modalities in the dataset such as Infrared, this would allow the model to learn patterns of other modalities and use them to estimate the radar patterns. This can be further improved by interpolating for all modalities combined as some modalities may be active while others are inactive at a given timestamp, combining them all improves the possibility of even a single modality being active at a time.
+The classification performance will also generally improve with additional features but it would be best to train the classifier separately on the entire sequence of a sample. Additionally, we can check the performance of the classifier on subsets of emotions instead.
 
 \bibliographystyle{named}
 \bibliography{ijcai26}
