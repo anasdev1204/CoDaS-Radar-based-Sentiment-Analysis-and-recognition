@@ -54,7 +54,7 @@ $^3$Technische Universität Braunschweig\\
 \maketitle
 
 \begin{abstract}
-
+Sentiment analysis is crucial for human-computer interaction and is usually done on text, speech or visual data, it allows the computer to determine the human's emotion, improve human-computer communication and also helps in psychology. Most of the datasets for sentiment analysis and recognition are limited in scope and number of modalities while the RF-Behavior dataset consists of multiple modalities and human behaviors, we will focus on three different approaches of using radar to perform the analysis and recognition. The first approach consists of extracting various features from the radar sensor data and training classical Machine Learning (ML) models on it, the second approach trains a transformer on radar and infrared sensor data while the third approach trains a classification and interpolation model on the radar sensor data.
 \end{abstract}
 
 \section{Introduction}
@@ -411,7 +411,6 @@ Table. \ref{tab:hyperparameters} shows the hyperparameters, batch size was set t
 
 \begin{table}[!t]
 \centering
-
 \begin{tabular}{l l}
 \toprule
 \textbf{Hyperparameter} & \textbf{Value} \\
@@ -429,9 +428,9 @@ Gradient clipping max norm & 1.0 \\
 Interpolation & Cubic Spline \\
 ODE solver & RK4\\
 \bottomrule
-\label{tab:hyperparameters}
 \end{tabular}
 \caption{Hyperparameters used for training the NCDE model.}
+\label{tab:hyperparameters}
 \end{table}
 
 \subsection{Results}
