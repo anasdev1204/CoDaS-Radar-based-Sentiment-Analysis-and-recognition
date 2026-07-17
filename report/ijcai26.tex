@@ -162,7 +162,7 @@ The classification models considered in this study include Support Vector Machin
 
 \subsection{Results}
 
-Figure~\ref{fig:models_comparison} compares the performance of the evaluated classifiers using the mean F1-score across all folds. Among the considered models, the Support Vector Machine (SVM) achieved the highest performance with a mean F1-score of 0.72 which suggests that it was able to identify robust decision boundaries.
+Figure~\ref{tab:model_results} compares the performance of the evaluated classifiers using the mean F1-score across all folds. Among the considered models, the Support Vector Machine (SVM) achieved the highest performance with a mean F1-score of 0.72 which suggests that it was able to identify robust decision boundaries.
 
 The gradient boosting models also achieved competitive results. Both LightGBM and XGBoost obtained mean F1-scores between 0.66 and 0.67, indicating that ensemble tree-based methods are capable of capturing the non-linear relationships present in the extracted features. Their performance, while slightly lower than that of the SVM, confirm that boosting-based approaches can be effective for radar-based sentiment recognition tasks. However, CatBoost underperformed compared to the other gradient boosting models, achieving a mean F1-score of 0.62. While it is known for its strong performance on heterogeneous tabular datasets \cite{xgboost2025}, the specific characteristics of the radar-based features may have limited its effectiveness in this context.
 
@@ -170,12 +170,23 @@ The Multi-Layer Perceptron (MLP) achieved a similar performance to the gradient 
 
 Overall, the superior performance of the SVM highlights the effectiveness of the proposed feature extraction pipeline and suggests that carefully engineered motion descriptors can provide sufficient discriminative power without requiring more complex deep learning architectures.
 
-\begin{figure}[!t]
-    \centering
-    \includegraphics[width=\columnwidth]{figures/models_comparison.png}
-    \caption{Models comparison based on F1 score.}
-    \label{fig:models_comparison}
-\end{figure}
+\begin{table}[!t]
+\centering
+\scriptsize
+\caption{Model training results.}
+\label{tab:model_results}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{F1 Score} & \textbf{K} \\
+\midrule
+SVM        & 0.720 & 6 \\
+LightGBM  & 0.668 & 7 \\
+MLP       & 0.671 & 5 \\
+XGBoost   & 0.665 & 8 \\
+CatBoost  & 0.620 & 6 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
 \section{Method 2: Deep Learning with Raw Data}
 
