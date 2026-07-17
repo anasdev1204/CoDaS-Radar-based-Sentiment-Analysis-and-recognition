@@ -256,8 +256,6 @@ To make the model useful beyond the specific behaviors in the RF-Behavior datase
     \ell_{i,j} = -\log \frac{\exp(\text{sim}(\mathbf{z}_i, \mathbf{z}_j)/\tau)}{\sum_{k=1}^{2N} \mathbb{1}_{[k \neq i]} \exp(\text{sim}(\mathbf{z}_i, \mathbf{z}_k)/\tau)} \,,
 \end{equation}
 
-Because one of the modalities will be more difficult to model than the other, we align the embedding spaces of both modalities so the weaker sensor can learn from the stronger one. We project both types of sensor data into vectors of the same size and with a symmetric contrastive loss, similar to CLIP \cite{radford2021learning}, we train both models jointly. Using cross entropy, this loss function maximizes the similarity between simultaneous radar and infrared recordings of the same event while minimizing similarity across different events.
-
 \subsection{Results}
 
 Our hyperparameter search revealed that using classification token (CLS) pooling in the PCE collapses the model's output space, mapping all inputs to nearly identical vectors. Conversely, using convolutional blocks to downsample the temporal dimension in the infrared camera model drastically reduces training time, as the self-attention mechanism's computational cost scales quadratically with sequence length. For radar models, a larger PCE increases inference time due to our mini-batched-frames by mini-batched-frames processing of jagged points dimension. For unsupervised models, mean pooling consistently out-performed end-of-sequence (EOS) pooling. We also observed that, for unsupervised models, minimizing training loss, rather than stopping prematurely solely based on validation loss, is critical for test performance, as overly early termination leads to noisy, un-converged models.
@@ -276,13 +274,11 @@ C1       & 21 & Radar    & 1,311,125 & 94.41\% & 12 \\
 C1       & 21 & Infrared &   526,869 & 96.56\% & 25 \\
 C2       & 10 & Radar    &   106,826 & 91.97\% & 23 \\
 C2       & 10 & Infrared & 1,541,850 & 98.12\% & 29 \\
-\hline
 C3       &  6 & Radar    & 1,349,766 & 46.12\% & 30 \\
 C3       &  6 & Infrared &   243,798 & 56.16\% & 56 \\
 \hline
 C1+C2    & 31 & Radar    &   120,895 & 89.51\% &  6 \\
 C1+C2    & 31 & Infrared &   195,375 & 91.52\% &  5 \\
-C1+C2+C3 & 37 & Radar    & 1,738,021 & 71.76\% &  1 \\
 C1+C2+C3 & 37 & Infrared &   165,269 & 78.29\% &  7 \\
 \bottomrule
 \end{tabular}
@@ -304,15 +300,19 @@ Our unsupervised models were evaluated using 1-shot classification, where we mea
 \begin{table}[!t]
 \centering
 \small
-\setlength{\tabcolsep}{5pt}
+\setlength{\tabcolsep}{2pt}
 \begin{tabular}{l r l r c r}
 \toprule
-\textbf{} & \textbf{\# Behaviors} & \textbf{Modality} & \textbf{\# Params} & \textbf{Test F1} & \textbf{\# Models} \\
+\textbf{Campaign} & \textbf{\# Behaviors} & \textbf{Modality} & \textbf{\# Params} & \textbf{Test F1} & \textbf{\# Models} \\
 \midrule
-C1    & 17-2-2 & Radar    &   254,144 & 93.03\% &  6 \\
-C1    & 17-2-2 & Infrared &   142,016 & 96.68\% &  7 \\
-C2    &  6-2-2 & Radar    &    93,440 & 77.51\% & 14 \\
-C2    &  6-2-2 & Infrared &   923,280 & 93.48\% & 31 \\
+C1       & 17-2-2 & Radar    &   254,144 & 93.03\% &  6 \\
+C1       & 17-2-2 & Infrared &   142,016 & 96.68\% &  7 \\
+C2       &  6-2-2 & Radar    &    93,440 & 77.51\% & 14 \\
+C2       &  6-2-2 & Infrared &   923,280 & 93.48\% & 31 \\
+\hline
+C1+C2    & 23-4-4 & Radar    &   175,776 & 90.31\% &  7 \\
+C1+C2    & 23-4-4 & Infrared &   282,176 & 88.13\% &  7 \\
+C1+C2+C3 & 25-6-6 & Radar    &   817,472 & 79.20\% &  7 \\
 \bottomrule
 \end{tabular}
 \caption{Grid search: One-shot classification results for unsupervised models. The behaviors column indicates the split of train, validation, and test classes.}
