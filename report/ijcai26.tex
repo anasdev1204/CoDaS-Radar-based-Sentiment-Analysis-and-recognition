@@ -187,14 +187,7 @@ For this method, we utilize the radar and infrared camera from the first three c
 
 \subsubsection{Sampling Rate}
 
-Each of the 13 radar sensors captures an irregular number of 4D points (comprising density and $X, Y, Z$ coordinates) at arbitrary timestamps. To structure this sparse data into uniform batches, represented as (batch, time, points, coordinates), we group the data into evenly spaced time bins. We calculate the optimal frame rate empirically by testing values from 10 to 30 frames per second (FPS) at 0.1 increments across all recordings. Across all candidate FPS, we normalize the total number of frames and the average number of points per frame, and compute the squared difference between the two corresponding quantities. This optimization yields a U-shaped error curve (Figure~\ref{fig:radar_fps}) with a minimum at 18.7 FPS (representing a 53.5\,ms time bin). At this rate, the average recording's frame count matches its average points-per-frame count, balancing the temporal and spatial dimensions of our input tensor.
-
-\begin{figure}[!t]
-    \centering
-    \includesvg[width=\columnwidth]{figures/radar_fps}
-    \caption{Optimization curve showing how we balance the number of radar frames and spatial points per frame.}
-    \label{fig:radar_fps}
-\end{figure}
+Each of the 13 radar sensors captures an irregular number of 4D points (comprising density and $X, Y, Z$ coordinates) at arbitrary timestamps. To structure this sparse data into uniform batches, represented as (batch, time, points, coordinates), we group the data into evenly spaced time bins. We calculate the optimal frame rate empirically by testing values from 10 to 30 frames per second (FPS) at 0.1 increments across all recordings. Across all candidate FPS, we normalize the total number of frames and the average number of points per frame, and compute the squared difference between the two corresponding quantities. This optimization yields a U-shaped error curve with a minimum at 18.7 FPS (representing a 53.5\,ms time bin). At this rate, the average recording's frame count matches its average points-per-frame count, balancing the temporal and spatial dimensions of our input tensor.
 
 \subsubsection{Jagged Input Tensors}
 
