@@ -1,36 +1,12 @@
 from copy import deepcopy
 from time import time
+from typing import Literal
 
 import torch
 
-from sklearn.metrics import precision_recall_fscore_support
+from .loss import get_criterion
+from .infer import infer_model
 
-
-def to_device(x, device, non_blocking=True):
-    if isinstance(x, torch.Tensor):
-        return x.to(device, non_blocking=non_blocking)
-    elif isinstance(x, (list, tuple)):
-        return [to_device(a, device, non_blocking=non_blocking) for a in x]
-    elif isinstance(x, dict):
-        return {k: to_device(v, device, non_blocking=non_blocking) for k, v in x.items()}
-    else:
-        return x
-
-def evaluate_model(model: torch.nn.Module, data_loader: torch.utils.data.DataLoader, device="cpu", ys=None):
-    all_predicted, all_targets = [], []
-    with torch.no_grad():
-        for inputs, targets in data_loader:
-            outputs = model(to_device(inputs, device))
-            predicted = outputs.max(1).indices if outputs.shape[1] > 1 else (outputs > 0.5).long().squeeze(1)
-            all_predicted.extend(predicted.cpu().numpy().tolist())
-            all_targets.extend(targets.cpu().numpy().tolist())
-
-    if isinstance(ys, dict):
-        ys.setdefault("predicted", []).extend(all_predicted)
-        ys.setdefault("targets", []).extend(all_targets)
-
-    precision, recall, f1, _ = precision_recall_fscore_support(all_targets, all_predicted, average='weighted', zero_division=0)
-    return precision, recall, f1
 
 def fit(
     model: torch.nn.Module,
@@ -45,6 +21,9 @@ def fit(
     pin_memory=False,
     num_workers=0,
     device="cpu",
+    objective: Literal["classification", "contrastive", "cross_modal"] = "classification",
+    train_sampler=None,
+    valid_sampler=None,
 ):
     """
     Trains a PyTorch model with early stopping and checkpoints the best model
@@ -53,20 +32,16 @@ def fit(
 
     model = model.to(device)
 
-    train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers)
-    valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers)
-
-    def get_criterion(class_weights, n_outputs, device):
-        if n_outputs == 1:
-            if class_weights is not None:
-                class_weights = (class_weights[1] / class_weights[0]).to(device)
-            return torch.nn.BCEWithLogitsLoss(weight=class_weights)
-        else:
-            return torch.nn.CrossEntropyLoss(weight=class_weights).to(device)
+    if objective == "classification":
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=True,  collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers, batch_sampler=train_sampler)
+        valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_size=batch_size, shuffle=False, collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers, batch_sampler=valid_sampler)
+    else:
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_sampler=train_sampler, collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers)
+        valid_loader = torch.utils.data.DataLoader(valid_dataset, batch_sampler=valid_sampler, collate_fn=collate_fn, pin_memory=pin_memory, num_workers=num_workers)
 
     n_outputs = getattr(model, "output_dim", None)
-    train_criterion = get_criterion(getattr(train_dataset, "class_weights", None), n_outputs, device)
-    valid_criterion = get_criterion(getattr(valid_dataset, "class_weights", None), n_outputs, device)
+    train_criterion = get_criterion(objective=objective, class_weights=getattr(train_dataset, "class_weights", None), n_out=n_outputs, device=device)
+    valid_criterion = get_criterion(objective=objective, class_weights=getattr(valid_dataset, "class_weights", None), n_out=n_outputs, device=device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
 
     history = {"train_loss": [], "valid_loss": [], "checkpoint_epoch": None}
@@ -87,18 +62,13 @@ def fit(
             model.train()
             running_loss = 0.0
 
-            for inputs, targets in train_loader:
-                inputs, targets = to_device(inputs, device, non_blocking=pin_memory), targets.to(device)
-
+            for train_batch in train_loader:
                 optimizer.zero_grad()
-                outputs = model(inputs)
-                if outputs.shape[1] == 1:
-                    targets = targets.to(outputs.dtype)
-                loss = train_criterion(outputs.squeeze(-1), targets)
+                loss, outputs = infer_model(objective, model, train_batch, train_criterion, device=device, non_blocking=pin_memory, frame_size=(train_sampler.frame_size if train_sampler is not None else None))
                 loss.backward()
                 optimizer.step()
 
-                running_loss += loss.item() * len(inputs)
+                running_loss += loss.item() * len((outputs[0] if isinstance(outputs, tuple) else outputs))
 
             epoch_train_loss = running_loss / (len(train_dataset) or 1)
 
@@ -110,14 +80,10 @@ def fit(
             running_val_loss = 0.0
 
             with torch.no_grad():
-                for inputs, targets in valid_loader:
-                    inputs, targets = to_device(inputs, device, non_blocking=pin_memory), targets.to(device)
-                    outputs = model(inputs)
-                    if outputs.shape[1] == 1:
-                        targets = targets.to(outputs.dtype)
-                    loss = valid_criterion(outputs.squeeze(-1), targets)
+                for valid_batch in valid_loader:
+                    loss, outputs = infer_model(objective, model, valid_batch, valid_criterion, device=device, non_blocking=pin_memory)
 
-                    running_val_loss += loss.item() * len(inputs)
+                    running_val_loss += loss.item() * len((outputs[0] if isinstance(outputs, tuple) else outputs))
             epoch_val_loss = running_val_loss / (len(valid_dataset) or 1)
 
             history["train_loss"].append(epoch_train_loss)
@@ -134,7 +100,7 @@ def fit(
                 patience_counter = 0
                 history["checkpoint_epoch"] = epoch
                 if verbose:
-                    print(f"--> Checkpoint saved!")
+                    print("--> Checkpoint saved!")
             else:
                 patience_counter += 1
                 if verbose:

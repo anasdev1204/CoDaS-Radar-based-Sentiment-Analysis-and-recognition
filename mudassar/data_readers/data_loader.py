@@ -1,8 +1,8 @@
 import os
+from concurrent.futures import ThreadPoolExecutor
 from copy import deepcopy
 from glob import glob
 from typing import Literal
-from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pandas as pd
@@ -10,27 +10,31 @@ import torch
 
 
 def make_radar_path(dataset_dir, campaign, user, behavior, repetition):
-    path = os.path.abspath(os.path.join(dataset_dir, "Radar",campaign,user,behavior, str(repetition)))
+    path = os.path.abspath(os.path.join(dataset_dir, "Radar", campaign, user, behavior, str(repetition)))
     if not os.path.exists(path):
         path = os.path.abspath("/0".join(os.path.split(path)))
     test_path = os.path.abspath("/0".join(os.path.split(path)))
     if os.path.exists(test_path):
         path = test_path
     if not os.path.exists(path):
-        path = os.path.abspath(path.rstrip("/\\")+"-1")
+        path = os.path.abspath(path.rstrip("/\\") + "-1")
     if not os.path.exists(path):
-        path = os.path.abspath(path.rsplit("-", 1)[0]+"-2")
+        path = os.path.abspath(path.rsplit("-", 1)[0] + "-2")
     if os.path.exists(path):
         return [os.path.normpath(p) for p in glob(f"{path}/*.pkl")]
     # print(f"Radar path not found for {campaign}/{user}/{behavior}/{repetition} at {path}")
     return None
 
+
 def make_infrared_path(dataset_dir, campaign, user, behavior, repetition):
-    path = os.path.abspath(os.path.join(dataset_dir, "InfraredCam", "InfraredCam", campaign, user, behavior, f"{repetition}.csv"))
+    path = os.path.abspath(
+        os.path.join(dataset_dir, "InfraredCam", "InfraredCam", campaign, user, behavior, f"{repetition}.csv")
+    )
     if os.path.exists(path):
         return os.path.normpath(path)
     # print(f"Infrared path not found for {campaign}/{user}/{behavior}/{repetition} at {path}")
     return None
+
 
 def find_available_files(dataset_dir):
     def extract_id(path: str):
@@ -50,16 +54,22 @@ def find_available_files(dataset_dir):
     merged = pd.merge(df_ir, df_r, how="outer", on=key_cols)
     return merged.sort_values(by=key_cols).reset_index(drop=True)
 
+
 def get_common_users(df: pd.DataFrame):
     user_counts = df.groupby(["behavior", "user"]).count().repetition.reset_index()
     mask = user_counts.behavior.str.startswith("E")
     count_mask = user_counts.repetition == 8
-    return sorted(set.intersection(*(user_counts[mask | (~mask & count_mask)].groupby("behavior").agg({"user":set})["user"].values.tolist())))
+    return sorted(
+        set.intersection(
+            *(user_counts[mask | (~mask & count_mask)].groupby("behavior").agg({"user": set})["user"].values.tolist())
+        )
+    )
 
 
 class BehaviorDataset(torch.utils.data.Dataset):
     REPEATED_ACTIVITIES = ("A01", "A02")
     REPEATED_EMOTIONS = ("E01", "E02", "E03", "E04", "E05", "E06")
+
     def __init__(
         self,
         dataframe: pd.DataFrame,
@@ -82,10 +92,12 @@ class BehaviorDataset(torch.utils.data.Dataset):
         self.path_column = f"{modality}_path"
         if modality == "radar":
             from .radar import RadarData
+
             self.reader_cls = RadarData
             self.radar_bin_fps = radar_bin_fps
         elif modality == "infrared":
             from .infrared import InfraredData
+
             self.reader_cls = InfraredData
         else:
             raise ValueError(f"Unknown modality: {modality}")
@@ -104,7 +116,9 @@ class BehaviorDataset(torch.utils.data.Dataset):
             sample = self.reader_cls.read_from_path(path, transform=True, normalize=True, dtype=np.float32)
             if self.modality == "radar":
                 sample = sample.bin(self.radar_bin_fps)
-                sample.frames = [torch.from_numpy(f).float().unsqueeze(0).unsqueeze(0) for f in sample.frames] # list[4D tensors]
+                sample.frames = [
+                    torch.from_numpy(f).float().unsqueeze(0).unsqueeze(0) for f in sample.frames
+                ]  # list[4D tensors]
             elif self.modality == "infrared":
                 sample.frames = torch.from_numpy(sample.frames).float().unsqueeze(0)  # 4D tensor
                 if self.df.iloc[idx]["behavior"].startswith("M"):
@@ -119,9 +133,15 @@ class BehaviorDataset(torch.utils.data.Dataset):
         if self.df.iloc[idx]["behavior"] in self.repeated_activities + self.repeated_emotions:
             # multiplier = 3 if self.df.iloc[idx]["behavior"] in self.repeated_emotions else 1
             actual_frame_count = data.shape[1] if isinstance(data, torch.Tensor) else len(data)
-            selected_frame_count = round(min(np.random.uniform(4,6)/(sample.timestamps[-1] - sample.timestamps[0]), 1.0) * actual_frame_count)
+            selected_frame_count = round(
+                min(np.random.uniform(4, 6) / (sample.timestamps[-1] - sample.timestamps[0]), 1.0) * actual_frame_count
+            )
             start = np.random.randint(0, actual_frame_count - selected_frame_count + 1)
-            data = data[:, start:start + selected_frame_count] if isinstance(data, torch.Tensor) else data[start:start + selected_frame_count]
+            data = (
+                data[:, start : start + selected_frame_count]
+                if isinstance(data, torch.Tensor)
+                else data[start : start + selected_frame_count]
+            )
             # print(f"Selected frame count: {selected_frame_count} / Actual frame count: {actual_frame_count} / raw frame count: {sample.n_frames} / Start: {start} / Sample: {self.df.iloc[idx]['behavior']} / shape: {data.shape if isinstance(data, torch.Tensor) else len(data)}")
         label = self.labels[idx]
         return data, label
@@ -143,6 +163,45 @@ class BehaviorDataset(torch.utils.data.Dataset):
             m = executor.map(self._load_sample, rng)
             if verbose:
                 from tqdm.auto import tqdm
+
                 m = tqdm(m, total=len(self), desc=desc, unit="sample")
             list(m)
         return self
+
+
+class ContrastiveBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, df: pd.DataFrame, batch_size=1, train=True, seed=42, items_per_class=2, class_col="behavior"):
+        self.df = df
+        self.batch_size = batch_size
+        self.items_per_class = items_per_class
+        self.train = train
+
+        self.class_indices = self.df.groupby(class_col).groups
+        self.class_indices = {cls: indices.tolist() for cls, indices in self.class_indices.items()}
+
+        max_class_len = max(len(indices) for indices in self.class_indices.values())
+        self.num_frames_per_epoch = int(np.ceil(max_class_len / self.items_per_class))
+        self.num_batches = int(np.ceil(self.num_frames_per_epoch / self.batch_size))
+
+        self.frame_size = self.items_per_class * len(self.class_indices)
+        self.rng = np.random.default_rng(seed)
+
+    def __iter__(self):
+        pointers = {cls: 0 for cls in self.class_indices.keys()}
+        class_indices = deepcopy(self.class_indices)
+        if self.train:
+            for cls in self.class_indices.keys():
+                self.rng.shuffle(class_indices[cls])
+
+        for _ in range(self.num_batches):
+            batch_indices = []
+            for _ in range(self.batch_size):
+                for cls in class_indices.keys():
+                    for _ in range(self.items_per_class):
+                        batch_indices.append(class_indices[cls][pointers[cls]])
+                        pointers[cls] = (pointers[cls] + 1) % len(class_indices[cls])
+
+            yield batch_indices
+
+    def __len__(self):
+        return self.num_batches

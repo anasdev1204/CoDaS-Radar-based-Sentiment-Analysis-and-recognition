@@ -40,3 +40,13 @@ def right_edge_padding(data_list, existing_attn_masks: Optional[list[Optional[to
     attn_masks = torch.cat(attn_masks, dim=0).to(items.device)
     # print("items", items.shape, "attns", attn_masks.shape)
     return items, attn_masks
+
+def to_device(x, device, non_blocking=True):
+    if isinstance(x, torch.Tensor):
+        return x.to(device, non_blocking=non_blocking)
+    elif isinstance(x, (list, tuple)):
+        return [to_device(a, device, non_blocking=non_blocking) for a in x]
+    elif isinstance(x, dict):
+        return {k: to_device(v, device, non_blocking=non_blocking) for k, v in x.items()}
+    else:
+        return x

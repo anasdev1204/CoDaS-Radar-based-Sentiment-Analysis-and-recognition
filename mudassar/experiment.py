@@ -1,16 +1,19 @@
-import random
 import json
 import os
+import random
 from copy import deepcopy
 from dataclasses import dataclass, field
 
+import genetic_search as G
+import numpy as np
 import pandas as pd
 import torch
-import numpy as np
-
-from models.simple_classifier import config as C, train as T, model as M
 from data_readers import data_loader as D
-import genetic_search as G
+from models.simple_classifier import config as C
+from models.simple_classifier import evaluation as E
+from models.simple_classifier import model as M
+from models.simple_classifier import train as T
+
 
 @dataclass
 class ExperimentLog:
@@ -29,6 +32,9 @@ class ExperimentLog:
     augment_rate: float = 0.0
     infer_times: list[float] = field(default_factory=list)
     train_times: list[float] = field(default_factory=list)
+    train_behaviors: list[str] = field(default_factory=list)
+    valid_behaviors: list[str] = field(default_factory=list)
+    test_behaviors: list[str] = field(default_factory=list)
 
     @property
     def mutation_id(self) -> str:
@@ -47,7 +53,7 @@ class ExperimentLog:
         return f"{self.mutation_id}_{self.n_params}_{self.output_id}"
 
     def to_dict(self):
-        return {k: v for k, v in list(self.__dict__.items())+[("model_id", self.model_id)] if v}
+        return {k: v for k, v in list(self.__dict__.items()) + [("model_id", self.model_id)] if v}
 
     def save(self, filename: str):
         with open(filename, "a", newline="") as f:
@@ -59,7 +65,8 @@ class ExperimentLog:
             setattr(new, k, v)
         return new
 
-def split_data(df:pd.DataFrame, valid_users, test_users):
+
+def split_data(df: pd.DataFrame, valid_users, test_users):
     valid_mask = df.user.isin(valid_users)
     test_mask = df.user.isin(test_users)
     valid_df = df[valid_mask]
@@ -68,7 +75,17 @@ def split_data(df:pd.DataFrame, valid_users, test_users):
     # print(f"{train_df.shape=} | {valid_df.shape=} | {test_df.shape=}")
     return train_df, valid_df, test_df
 
-def get_data_for_experiment(df:pd.DataFrame, labels=None, n_valid_users=2, n_test_users=4, valid_users=None, test_users=None, common_users=None, log=None):
+
+def get_data_for_experiment(
+    df: pd.DataFrame,
+    labels=None,
+    n_valid_users=2,
+    n_test_users=4,
+    valid_users=None,
+    test_users=None,
+    common_users=None,
+    log=None,
+):
     if not log:
         log = ExperimentLog()
     if not log.labels:
@@ -88,64 +105,150 @@ def get_data_for_experiment(df:pd.DataFrame, labels=None, n_valid_users=2, n_tes
         if not log.valid_users:
             log.valid_users = sorted(common_users[:n_valid_users])
         if not log.test_users:
-            log.test_users  = sorted(common_users[-n_test_users:])
+            log.test_users = sorted(common_users[-n_test_users:])
         if len(set(log.valid_users) & set(log.test_users)) > 0:
-            raise ValueError(f"Valid and test users must be disjoint. Found overlap: {set(log.valid_users) & set(log.test_users)}")
+            raise ValueError(
+                f"Valid and test users must be disjoint. Found overlap: {set(log.valid_users) & set(log.test_users)}"
+            )
     train_df, valid_df, test_df = split_data(exp_data, log.valid_users, log.test_users)
     return train_df, valid_df, test_df, log
 
-def run_one_experiment(model: torch.nn.Module, train_dataset: D.BehaviorDataset, valid_dataset: D.BehaviorDataset, test_dataset: D.BehaviorDataset, log=None, verbose=False, device="cpu", max_epochs=100, patience=5):
+
+def get_contrastive_data_for_experiment(
+    df: pd.DataFrame, train_behaviors=None, valid_behaviors=None, test_behaviors=None, log=None
+):
+    if not log:
+        log = ExperimentLog()
+    if not log.train_behaviors:
+        if train_behaviors is None:
+            raise ValueError("Either `log.train_behaviors` or `train_behaviors` must be provided.")
+        log.train_behaviors = sorted(train_behaviors)
+    if not log.valid_behaviors:
+        if valid_behaviors is None:
+            raise ValueError("Either `log.valid_behaviors` or `valid_behaviors` must be provided.")
+        log.valid_behaviors = sorted(valid_behaviors)
+    if not log.test_behaviors:
+        if test_behaviors is None:
+            raise ValueError("Either `log.test_behaviors` or `test_behaviors` must be provided.")
+        log.test_behaviors = sorted(test_behaviors)
+    train_mask = df.behavior.isin(log.train_behaviors)
+    valid_mask = df.behavior.isin(log.valid_behaviors)
+    test_mask = df.behavior.isin(log.test_behaviors)
+    valid_df = df[valid_mask]
+    test_df = df[test_mask]
+    train_df = df[train_mask & ~valid_mask & ~test_mask]
+
+    return train_df, valid_df, test_df, log
+
+
+def run_one_experiment(
+    model: torch.nn.Module,
+    train_dataset: D.BehaviorDataset,
+    valid_dataset: D.BehaviorDataset,
+    test_dataset: D.BehaviorDataset,
+    log=None,
+    verbose=False,
+    device="cpu",
+    max_epochs=100,
+    patience=5,
+    objective="classification",
+):
     if log is None:
-        log = ExperimentLog(labels=train_dataset.label_names, valid_users=valid_dataset.users or [], test_users=test_dataset.users or [])
+        log = ExperimentLog(
+            labels=train_dataset.label_names, valid_users=valid_dataset.users or [], test_users=test_dataset.users or []
+        )
 
     if not log.lr:
         log.lr = 1e-4
     if not log.batch_size:
-        log.batch_size = 16
+        log.batch_size = 16 if objective == "classification" else 1
 
-    history = T.fit(model, train_dataset, valid_dataset, lr=log.lr, batch_size=log.batch_size, verbose=verbose, collate_fn=D.BehaviorDataset.collate_fn, pin_memory=True, device=device, epochs=max_epochs, patience=patience)
+    train_sampler, valid_sampler = None, None
+    if objective != "classification":
+        train_sampler = D.ContrastiveBatchSampler(
+            train_dataset.df, train=True, batch_size=log.batch_size, items_per_class=2
+        )
+        valid_sampler = D.ContrastiveBatchSampler(
+            valid_dataset.df, train=False, batch_size=log.batch_size, items_per_class=2
+        )
+
+    history = T.fit(
+        model,
+        train_dataset,
+        valid_dataset,
+        lr=log.lr,
+        batch_size=log.batch_size,
+        verbose=verbose,
+        collate_fn=D.BehaviorDataset.collate_fn,
+        pin_memory=True,
+        device=device,
+        epochs=max_epochs,
+        patience=patience,
+        objective=objective,
+        train_sampler=train_sampler,
+        valid_sampler=valid_sampler,
+    )
     log.train_loss = history["train_loss"][history["checkpoint_epoch"]]
     log.valid_loss = history["valid_loss"][history["checkpoint_epoch"]]
     log.epochs = history["checkpoint_epoch"] + 1
-    test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=log.batch_size, shuffle=False, collate_fn=D.BehaviorDataset.collate_fn, pin_memory=True, num_workers=0)
-    log.test_f1 = float(T.evaluate_model(model.eval(), test_loader, device=device)[2])
+
+    test_loader = torch.utils.data.DataLoader(
+        test_dataset,
+        batch_size=log.batch_size,
+        shuffle=False,
+        collate_fn=D.BehaviorDataset.collate_fn,
+        pin_memory=True,
+        num_workers=0,
+    )
+    if objective == "classification":
+        log.test_f1 = float(E.evaluate_classification_model(model.eval(), test_loader, device=device)[2])
+    else:
+        log.test_f1 = float(E.evaluate_contrastive_model(model.eval(), test_loader, device=device)[2])
 
     return log
 
+
 def load_model_df(path):
     if not os.path.exists(path):
-        return pd.DataFrame(columns=['model_type', 'n_params', 'mutations', 'infer_times', 'train_times', 'bucket', 'modality'])
+        return pd.DataFrame(
+            columns=["model_type", "n_params", "mutations", "infer_times", "train_times", "bucket", "modality"]
+        )
 
     model_df = pd.read_csv(path)
-    model_df["bucket"] = model_df.n_params.apply(lambda x: np.log(x)/np.log(47)).round(1)
+    model_df["bucket"] = model_df.n_params.apply(lambda x: np.log(x) / np.log(47)).round(1)
     model_df["modality"] = model_df.model_type.str.split("_").str[-1]
     return model_df
+
 
 def load_exp_df(path):
     if os.path.exists(path):
         return pd.read_json(path, lines=True)
     return pd.DataFrame(columns=list(ExperimentLog().__dict__.keys()) + list(ExperimentLog().to_dict().keys()))
 
-def _update_input_output_dim(mutations: str, labels: list) -> str:
+
+def _update_input_output_dim(mutations: str, labels: list, n_out=None) -> str:
     mut = json.loads(mutations)
     model_type = next(iter(mut)).split(".")[0]
-    n_out = len(labels)
-    n_in = 6*7 if any(l.startswith(("A", "E")) for l in labels) else 3*7
+    if isinstance(next(iter(labels), None), list):
+        labels = labels[0]
+    if not n_out:
+        n_out = len(labels)
+    n_in = 6 * 7 if any(l.startswith(("A", "E")) for l in labels) else 3 * 7
 
     if model_type == "infrared":
-        mut[model_type+".input_dim"] = n_in
-    mut[model_type+".output_dim"] = (1 if n_out==2 else n_out)
+        mut[model_type + ".input_dim"] = n_in
+    mut[model_type + ".output_dim"] = 1 if n_out == 2 else n_out
     return json.dumps(mut, sort_keys=True)
 
-def select_mutations_grid(model_grouped_df, logs_file_path:str, labels):
 
-    log = ExperimentLog(labels=sorted(labels))
+def select_mutations_grid(model_grouped_df, logs_file_path: str, labels, n_out=None):
+    log = ExperimentLog(labels=sorted(labels[0] if isinstance(next(iter(labels), None), list) else labels))
     exp_df = load_exp_df(logs_file_path)
     processed = set(exp_df.mutations.tolist()) if not exp_df.empty else set()
 
     for _ in range(10):
         df: pd.DataFrame = model_grouped_df.sample(1).sort_values(["modality", "bucket"]).reset_index(drop=True).copy()
-        df["mutations"] = df["mutations"].apply(lambda m: _update_input_output_dim(m, labels))
+        df["mutations"] = df["mutations"].apply(lambda m: _update_input_output_dim(m, labels, n_out=n_out))
         df = df[~df["mutations"].isin(processed)]
         if not df.empty:
             return [log.copy(mutations=row["mutations"], model_type=row["model_type"]) for _, row in df.iterrows()]
@@ -153,57 +256,110 @@ def select_mutations_grid(model_grouped_df, logs_file_path:str, labels):
     print(f"Warning: No new mutations found for labels {labels}. Returning empty list.")
     return []
 
-def select_mutations_genetic(logs_file_path:str, labels):
-    log = ExperimentLog(labels=sorted(labels))
+
+def select_mutations_genetic(logs_file_path: str, labels, n_out=None):
+    log = ExperimentLog(labels=sorted(labels[0] if isinstance(next(iter(labels), None), list) else labels))
     exp_df = load_exp_df(logs_file_path)
     processed = set(exp_df.mutations.tolist()) if not exp_df.empty else set()
     mutations = G.get_offsprings(exp_df, n_offsprings=5)
-    return [log.copy(mutations=_update_input_output_dim(mut, labels), model_type=next(iter(json.loads(mut))).split(".")[0]) for modality, muts in mutations.items() for mut in muts if mut not in processed]
+    return [
+        log.copy(
+            mutations=_update_input_output_dim(mut, labels, n_out=n_out),
+            model_type=next(iter(json.loads(mut))).split(".")[0].strip(),
+        )
+        for modality, muts in mutations.items()
+        for mut in muts
+        if _update_input_output_dim(mut, labels, n_out=n_out) not in processed
+    ]
 
-def run_experiments(labels, batch_size=16, lr=1e-4, dataset_dir="RF-Behavior", experiments_dir="experiments", logs_filename="experiment_logs.jsonl", model_variants_path="model_variants.csv", radar_bin_fps=18.7, device="cpu", max_epochs=100, patience=5, augment_rate=0.0, use_genetic=False):
-    data_df = D.find_available_files(dataset_dir)
-    print(f"{data_df.shape=} NA:", data_df.isna().sum(0).filter(regex=r".*_path").to_dict())
-    # print(data_df.sample(1))
-    mask = data_df.campaign == "C3"
-    data_df = pd.concat([data_df[~mask].reset_index(drop=True).copy()] + [data_df[mask].reset_index(drop=True).copy() for _ in range(8)], ignore_index=True)
-    print(f"{data_df.shape=} NA:", data_df.isna().sum(0).filter(regex=r".*_path").to_dict())
 
-    common_users = D.get_common_users(data_df)
-    print(f"{len(common_users)=}:{common_users}")
-
+def run_experiments(
+    labels,
+    batch_size=16,
+    lr=1e-4,
+    max_epochs=100,
+    patience=5,
+    dataset_dir="RF-Behavior",
+    experiments_dir="experiments",
+    logs_filename="experiment_logs.jsonl",
+    model_variants_path="model_variants.csv",
+    radar_bin_fps=18.7,
+    device="cpu",
+    augment_rate=0.0,
+    use_genetic=False,
+    objective="classification",
+    n_out=256,
+    skip_radar=False,
+):
     logs_path = os.path.join(experiments_dir, logs_filename)
     if use_genetic:
-        logs = select_mutations_genetic(logs_path, labels)
+        logs = select_mutations_genetic(logs_path, labels, n_out=(None if objective == "classification" else n_out))
     else:
         model_df = load_model_df(model_variants_path)
         # model_df = model_df[~((model_df.model_type == "radar") & model_df.mutations.str.contains(r'"eos"'))].copy()
         # model_df = model_df[ (model_df.model_type == "infrared")].copy()
+        model_df = model_df[~(model_df.mutations.str.contains(r'"eos"'))].copy()
         # model_df = model_df[~(model_df.mutations.str.contains(r'null'))].copy()
         # model_df = model_df[~(model_df.mutations.str.contains(r': \[\]'))].copy()
         print(f"{model_df.shape=} | buckets per modality:", model_df.groupby("modality").bucket.nunique().to_dict())
-        logs = select_mutations_grid(model_df.groupby(["modality", "bucket"]), logs_path, labels)
+        logs = select_mutations_grid(
+            model_df.groupby(["modality", "bucket"]),
+            logs_path,
+            labels,
+            n_out=(None if objective == "classification" else n_out),
+        )
 
-    mod_to_log = {"radar": [], "infrared": []}
+    mod_to_log = { "infrared": [], "radar": [] }
     for l in logs:
         mod_to_log[l.model_type.split("_")[-1]].append(l)
-    print("modality_to_logs:", {k:len(v) for k,v in mod_to_log.items()})
+    print("modality_to_logs:", {k: len(v) for k, v in mod_to_log.items()})
+
+    data_df = D.find_available_files(dataset_dir)
+    # print(f"{data_df.shape=} NA:", data_df.isna().sum(0).filter(regex=r".*_path").to_dict())
+    # print(data_df.sample(1))
+    mask = data_df.campaign == "C3"
+    data_df = pd.concat(
+        [data_df[~mask].reset_index(drop=True).copy()]
+        + [data_df[mask].reset_index(drop=True).copy() for _ in range(8)],
+        ignore_index=True,
+    )
+    print(f"{data_df.shape=} NA:", data_df.isna().sum(0).filter(regex=r".*_path").to_dict())
+    common_users = D.get_common_users(data_df)
+    print(f"{len(common_users)=}:{','.join(common_users)}")
 
     for modality, logs in mod_to_log.items():
-        # if modality=="radar":
-        #     continue
+        if skip_radar and modality == "radar":
+            continue
         prev = None
-        for i, log in enumerate(logs[:10]):
+        for i, log in enumerate(logs[:7]):
             if augment_rate:
                 log.augment_rate = augment_rate
             if prev is None or log.labels != prev.labels:
-                train_df, valid_df, test_df, log = get_data_for_experiment(data_df.dropna(subset=[modality+"_path"]), labels=labels, common_users=common_users, log=log)
-                train_dataset = D.BehaviorDataset(train_df, modality=modality, radar_bin_fps=radar_bin_fps, augment_rate=log.augment_rate).preload()
+                if objective == "classification":
+                    train_df, valid_df, test_df, log = get_data_for_experiment(
+                        data_df.dropna(subset=[modality + "_path"]), labels=labels, common_users=common_users, log=log
+                    )
+                else:
+                    log.train_behaviors, log.valid_behaviors, log.test_behaviors = labels
+                    train_df, valid_df, test_df, log = get_contrastive_data_for_experiment(
+                        data_df.dropna(subset=[modality + "_path"]),
+                        train_behaviors=log.train_behaviors,
+                        valid_behaviors=log.valid_behaviors,
+                        test_behaviors=log.test_behaviors,
+                        log=log,
+                    )
+                train_dataset = D.BehaviorDataset(
+                    train_df, modality=modality, radar_bin_fps=radar_bin_fps, augment_rate=log.augment_rate
+                ).preload()
                 valid_dataset = D.BehaviorDataset(valid_df, modality=modality, radar_bin_fps=radar_bin_fps).preload()
-                test_dataset  = D.BehaviorDataset(test_df,  modality=modality, radar_bin_fps=radar_bin_fps).preload()
-                print(f"Loaded data for {modality=} | {len(train_dataset)=}, {len(valid_dataset)=}, {len(test_dataset)=} | {valid_dataset.users=}, {test_dataset.users=}")
+                test_dataset = D.BehaviorDataset(test_df, modality=modality, radar_bin_fps=radar_bin_fps).preload()
+                print(f"Loaded data for {modality=} | {len(train_dataset)=}, {len(valid_dataset)=}, {len(test_dataset)=} | {valid_dataset.users=}, {test_dataset.users=} | {','.join(train_dataset.label_names)=}, {','.join(valid_dataset.label_names)=}, {','.join(test_dataset.label_names)=}")
             else:
                 log.valid_users = deepcopy(prev.valid_users)
                 log.test_users = deepcopy(prev.test_users)
+                log.train_behaviors = deepcopy(prev.train_behaviors)
+                log.valid_behaviors = deepcopy(prev.valid_behaviors)
+                log.test_behaviors = deepcopy(prev.test_behaviors)
 
             if not log.lr:
                 log.lr = lr
@@ -215,15 +371,28 @@ def run_experiments(labels, batch_size=16, lr=1e-4, dataset_dir="RF-Behavior", e
             model = M.get_model_from_mutations(log.mutations, seed=0).to(device)
             log.n_params = model.n_params
 
-            print(f"[{i+1}] Running experiment for {type(model).__name__} with {model.n_params} parameters and config={json.dumps(model.config, indent=2)}")
-            log = run_one_experiment(model, train_dataset, valid_dataset, test_dataset, log, verbose=True, device=device, max_epochs=max_epochs, patience=patience)
+            print(
+                f"[{i+1}] Running experiment for {type(model).__name__} with {model.n_params} parameters and config={json.dumps(model.config, indent=2)}"
+            )
+            log = run_one_experiment(
+                model,
+                train_dataset,
+                valid_dataset,
+                test_dataset,
+                log,
+                verbose=True,
+                device=device,
+                max_epochs=max_epochs,
+                patience=patience,
+                objective=objective,
+            )
             print("Experiment completed.")
 
             if hasattr(model, "save") and callable(model.save):
-                model.save(os.path.join(experiments_dir, log.model_id+".pt"))
+                model.save(os.path.join(experiments_dir, log.model_id + ".pt"))
             log.save(os.path.join(experiments_dir, logs_filename))
-            _simplified_log_dict = {k:v for k, v in log.to_dict().items() if k!='mutations'}
+            _simplified_log_dict = {k: v for k, v in log.to_dict().items() if k != "mutations"}
             print(f"Experiment log saved to {os.path.join(experiments_dir, logs_filename)}: {_simplified_log_dict}")
-            print("="*50, "\n\n")
+            print("=" * 50, "\n\n")
 
             prev = log.copy()

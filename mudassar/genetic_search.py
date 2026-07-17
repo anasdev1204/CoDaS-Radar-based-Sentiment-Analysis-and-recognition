@@ -21,7 +21,7 @@ def loads_mutations(mut):
 def crossover(parent1: dict, parent2: dict):
     params = list(parent2.items())
     random.shuffle(params)
-    child = {**parent1, **dict(params[:len(params)//2])}
+    child = {**parent1, **dict(params[:random.randint(1, len(params)-1)])}
     return child
 
 def mutate(child:dict, model_type=None, n=1):
@@ -55,6 +55,14 @@ def make_offsprings(top, n_offsprings=10, mutation_probability=0.3, n_mutations=
                 child = mutate(child, model_type=model_type, n=n_mutations)
                 score += random.uniform(-0.01, 0.01)
             children.append((json.dumps(child, sort_keys=True), score))
+
+    for model_type in top.groups.keys():
+        modality = model_type.split("_")[-1]
+        children = offsprings.setdefault(modality, [])
+        for _, row in top.get_group(model_type).iterrows():
+            mutant = mutate(row.mutations, model_type=model_type, n=n_mutations)
+            # mutant = row.mutations
+            children.append((json.dumps(mutant, sort_keys=True), row.score+random.uniform(-0.01, 0.01)))
 
     mutations = {modality: choose_offspring(children_with_scores, n=n_offsprings) for modality, children_with_scores in offsprings.items()}
     return mutations
