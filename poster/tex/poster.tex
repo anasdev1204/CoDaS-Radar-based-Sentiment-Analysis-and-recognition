@@ -39,7 +39,8 @@ Mohamed-anas Abbouchi\inst{1}, Haider Azam\inst{2}, Mudassar Iqbal\inst{3}
 
 \begin{document}
 \begin{frame}[t]
-\begin{multicols}{4}
+\hspace{1cm}
+\begin{multicols}{3}
 
 \section{Introduction}
 
@@ -95,11 +96,11 @@ The architecture (Figure~1) uses a Point Cloud Encoder (a BERT-style self-attent
 \begin{figure}
 \centering
 \includegraphics[width=0.99\columnwidth]{mudassar_model.pdf}
-\caption{Transformer-based pipeline: a spatial Point Cloud Encoder processes 3D points per frame, followed by a temporal encoder over the resulting sequence of latent vectors.}
+\caption{Dual Transformer pipeline}
 \end{figure}
 \vskip2ex
 
-Both supervised classification (cross-entropy loss, LOSO-style user split) and unsupervised contrastive learning (SimCLR-style NT-Xent loss, with CLIP-style radar/infrared alignment) were evaluated, along with a hyperparameter search over convolutional depth, transformer depth, attention heads, embedding size, and pooling strategy.
+Both supervised classification (cross-entropy loss, user-level split) and unsupervised contrastive learning (NT-Xent loss, class-level split) were evaluated, along with a hyperparameter search over convolutional depth, transformer depth, attention heads, embedding size, and pooling strategy.
 
 \subsection{Results}
 
@@ -113,7 +114,7 @@ Both supervised classification (cross-entropy loss, LOSO-style user split) and u
 \textbf{Classes} &
 \textbf{Type} &
 \textbf{Params} &
-\textbf{Test F1} &
+\textbf{Test-F1} &
 \textbf{Models} \\
 \midrule
 C1       & 21 & Radar    & 1,311,125 & 94.41\% & 12 \\
@@ -129,7 +130,7 @@ C1+C2+C3 & 37 & Radar    &   268,453 & 83.74\% &  5 \\
 C1+C2+C3 & 37 & IR &   165,269 & 78.29\% &  7 \\
 \bottomrule
 \end{tabularx}
-\caption{Performance metrics of supervised classification models.}
+\caption{Results for supervised classification models.}
 \label{tab:supervised_results}
 \end{table}
 
@@ -143,7 +144,7 @@ C1+C2+C3 & 37 & IR &   165,269 & 78.29\% &  7 \\
 \textbf{Split} &
 \textbf{Type} &
 \textbf{Params} &
-\textbf{Test F1} &
+\textbf{Test-F1} &
 \textbf{Models} \\
 \midrule
 C1       & 17-2-2 & Radar    & 254,144 & 93.03\% & 6 \\
@@ -157,7 +158,8 @@ C1+C2+C3 & 25-6-6 & Radar    & 817,472 & 79.20\% & 7 \\
 C1+C2+C3 & 25-6-6 & IR & 85,184  & 75.41\% & 7 \\
 \bottomrule
 \end{tabularx}
-\caption{Grid search results for one-shot unsupervised classification. The split column indicates the number of train, validation, and test behavior classes.}
+\caption{Results for one-shot unsupervised classification.
+(Split: \# train-valid-test behavior classes)}
 \label{tab:unsupervised_results}
 \end{table}
 
