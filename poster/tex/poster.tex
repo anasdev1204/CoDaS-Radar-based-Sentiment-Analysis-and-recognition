@@ -1,6 +1,6 @@
 \documentclass[final]{beamer}
 \usepackage[orientation=portrait,size=a0,
-            scale=1.2        % font scale factor
+            scale=1.21        % font scale factor
            ]{beamerposter}
 
 \geometry{
@@ -46,18 +46,22 @@ Mohamed-anas Abbouchi\inst{1}, Haider Azam\inst{2}, Mudassar Iqbal\inst{3}
 
 Sentiment analysis has traditionally relied on text, speech, and visual data, leaving body movement as a comparatively unexplored modality despite its strong link to affective expression. Radar sensing offers a non-intrusive, privacy-preserving alternative capable of capturing subtle body movements without the limitations of cameras or wearables.
 
-\textbf{This work uses the multimodal RF-Behavior dataset to investigate radar-based sentiment recognition through three complementary approaches shown below.
+This work uses the multimodal \textbf{RF-Behavior dataset} to investigate radar-based sentiment recognition through \textbf{three complementary approaches} shown below.
 \begin{enumerate}
-\item Extracting local features and using classical Machine Learning techniques.
-\item Training on raw multi-modal data using Deep Learning Transformer encoder
-\item Utilizing Neural Controlled Differential Equation for interpolation and classification
+\item \textbf{Extracting local features} and using classical Machine Learning techniques.
+\item Training on raw multi-modal data using \textbf{Deep Learning} Transformer encoder.
+\item Utilizing \textbf{Neural Controlled Differential Equation} for interpolation and classification.
 \end{enumerate}
-}
+
+\hspace{1cm}
+
 \section{Dataset}
 
 The study is built on the third campaign of the RF-Behavior dataset~\cite{zuo2025}, collected from 44 participants using 13 radars, 8 RFID tags, LoRa devices, and infrared cameras. This campaign targets six sentiment states: depression, distraction, excitement, focus, relaxation, and stress.
 
 Radar data consists of XYZ target-position sequences over time; infrared data adds 3--6 body-part landmarks (position and orientation) sampled at 100~Hz. Prior to modeling, radar streams are time-synchronized across sensors and normalized per user to remove individual biases.
+
+\hspace{1cm}
 
 \section{Method 1: Feature-Based Classification}
 
@@ -88,6 +92,9 @@ With 13 radars, this yields 351 candidate features across over 600 windows. An A
 \subsection{Results}
 
 \textbf{SVM achieved the strongest performance with weighted F1-score of 0.72}, outperforming the gradient-boosting models (LightGBM and XGBoost around 0.66--0.67) and CatBoost (0.62). MLP performed comparably to the boosting methods. These results suggest that carefully engineered motion descriptors can provide strong discriminative power without requiring deep architectures.
+
+\vfill\null
+\columnbreak
 
 \section{Method 2: Deep Learning with Raw Data}
 
@@ -120,12 +127,12 @@ Both supervised classification (cross-entropy loss, user-level split) and unsupe
 \textbf{Test-F1} &
 \textbf{Models} \\
 \midrule
-C1       & 21 & Radar    & 1,311,125 & 94.41\% & 12 \\
-C1       & 21 & IR &   526,869 & 96.56\% & 25 \\
-C2       & 10 & Radar    &   106,826 & 91.97\% & 23 \\
-C2       & 10 & IR & 1,541,850 & 98.12\% & 29 \\
-C3       &  6 & Radar    & 1,349,766 & 46.12\% & 30 \\
-C3       &  6 & IR &   243,798 & 56.16\% & 56 \\
+C1: Gestures   & 21 & Radar    & 1,311,125 & 94.41\% & 12 \\
+C1: Gestures   & 21 & IR &   526,869 & 96.56\% & 25 \\
+C2: Activities & 10 & Radar    &   106,826 & 91.97\% & 23 \\
+C2: Activities & 10 & IR & 1,541,850 & 98.12\% & 29 \\
+C3: Emotions   &  6 & Radar    & 1,349,766 & 46.12\% & 30 \\
+C3: Emotions   &  6 & IR &   243,798 & 56.16\% & 56 \\
 \midrule
 C1+C2    & 31 & Radar    &   120,895 & 89.51\% &  6 \\
 C1+C2    & 31 & IR &   195,375 & 91.52\% &  5 \\
@@ -150,10 +157,10 @@ C1+C2+C3 & 37 & IR &   165,269 & 78.29\% &  7 \\
 \textbf{Test-F1} &
 \textbf{Models} \\
 \midrule
-C1       & 17-2-2 & Radar    & 254,144 & 93.03\% & 6 \\
-C1       & 17-2-2 & IR & 142,016 & 96.68\% & 7 \\
-C2       & 6-2-2  & Radar    & 93,440  & 77.51\% & 14 \\
-C2       & 6-2-2  & IR & 923,280 & 93.48\% & 31 \\
+C1: Gestures   & 17-2-2 & Radar    & 254,144 & 93.03\% & 6 \\
+C1: Gestures   & 17-2-2 & IR & 142,016 & 96.68\% & 7 \\
+C2: Activities & 6-2-2  & Radar    & 93,440  & 77.51\% & 14 \\
+C2: Activities & 6-2-2  & IR & 923,280 & 93.48\% & 31 \\
 \midrule
 C1+C2    & 23-4-4 & Radar    & 175,776 & 90.31\% & 7 \\
 C1+C2    & 23-4-4 & IR & 282,176 & 88.13\% & 7 \\
@@ -207,12 +214,15 @@ TCN + Baseline & 0.1039 & 1.650 & 33.33 \\
 \caption{Interpolation and classification results.}
 \end{table}
 Despite NCDE having cubic spline interpolated input , it failed to surpass the baseline, this suggests the problem lies in the data.
-\section{Summary and Conclusions}
+\section{Conclusions}
 
-Across all three methodologies, radar sensing shows clear promise for privacy-preserving sentiment recognition, though performance on subtle emotional states remains behind that on simpler, more repetitive behaviors, and behind infrared-based approaches. Feature-based SVM classification proved the most robust and data-efficient approach on the emotion classes studied. Deep learning on raw data generalizes well to unseen behaviors in the unsupervised setting but degrades on fine-grained emotion recognition. Joint interpolation-classification remains constrained by limited data and fails to improve on baseline.
-
-\textbf{Promising future directions include multimodal fusion of sensors, architectures tailored to point-cloud and irregular-time-series structure, and aligning learned sensor representations with text encoders to enable zero-shot recognition of new behaviors.}
-
+\begin{itemize}
+    \item \textbf{Radar sensing shows clear promise} for privacy-preserving sentiment recognition.
+    \item \textbf{Feature-based SVM} was the most robust and data-efficient approach for the studied emotion classes.
+    \item \textbf{Raw-data deep learning} generalizes well to unseen behaviors in the unsupervised setting, but performance drops for fine-grained emotion recognition.
+    \item \textbf{Joint interpolation--classification} remains limited by the available data.
+    \item \textbf{Future work:} multimodal radar--infrared fusion, data augmentation (sensor dropout, noise, geometric transforms), and alignment with text encoders.
+\end{itemize}
 \end{multicols}
 
 \end{frame}
