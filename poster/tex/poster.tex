@@ -1,6 +1,6 @@
 \documentclass[final]{beamer}
 \usepackage[orientation=portrait,size=a0,
-            scale=1.1         % font scale factor
+            scale=1.2        % font scale factor
            ]{beamerposter}
 
 \geometry{
@@ -29,8 +29,8 @@ Mohamed-anas Abbouchi\inst{1}, Haider Azam\inst{2}, Mudassar Iqbal\inst{3}
 \institute
 [RF-Behavior Sentiment Recognition] % General University
 {
-\inst{1} Aalto University\\[0.3ex]
-\inst{2} Universitat Politecnica de Catalunya\\[0.3ex]
+\inst{1} Aalto University
+\inst{2} Universitat Politecnica de Catalunya
 \inst{3} Technische Universitat Braunschweig
 }
 \date{\today}
@@ -44,12 +44,15 @@ Mohamed-anas Abbouchi\inst{1}, Haider Azam\inst{2}, Mudassar Iqbal\inst{3}
 
 \section{Introduction}
 
-\structure{Radar sensing for privacy-preserving affective computing}
-
 Sentiment analysis has traditionally relied on text, speech, and visual data, leaving body movement as a comparatively unexplored modality despite its strong link to affective expression. Radar sensing offers a non-intrusive, privacy-preserving alternative capable of capturing subtle body movements without the limitations of cameras or wearables.
 
-This work uses the multimodal RF-Behavior dataset to investigate radar-based sentiment recognition through three complementary approaches shown below.
-
+\textbf{This work uses the multimodal RF-Behavior dataset to investigate radar-based sentiment recognition through three complementary approaches shown below.
+\begin{enumerate}
+\item Extracting local features and using classical Machine Learning techniques.
+\item Training on raw multi-modal data using Deep Learning Transformer encoder
+\item Utilizing Neural Controlled Differential Equation for interpolation and classification
+\end{enumerate}
+}
 \section{Dataset}
 
 The study is built on the third campaign of the RF-Behavior dataset~\cite{zuo2025}, collected from 44 participants using 13 radars, 8 RFID tags, LoRa devices, and infrared cameras. This campaign targets six sentiment states: depression, distraction, excitement, focus, relaxation, and stress.
@@ -80,15 +83,15 @@ Turn angle, tortuosity, PCA explained variance \\
 \caption{Extracted trajectory features (27 per radar).}
 \end{table}
 
-With 13 radars, this yields 351 candidate features across over 600 windows. An ANOVA F-test selects the top-$k$ features per radar, and Leave-One-Subject-Out (LOSO) cross-validation guides a joint search over window size, stride, and feature count for five classifiers: SVM, LightGBM, XGBoost, CatBoost, and MLP.
+With 13 radars, this yields 351 candidate features across over 600 windows. An ANOVA F-test selects the top-$k$ features per radar, and Leave-One-Subject-Out (LOSO) cross-validation guides a joint search over window size, stride, and feature count for five classifiers: Support Vector Machine (SVM), LightGBM, XGBoost, CatBoost, and MLP.
 
 \subsection{Results}
 
-The Support Vector Machine achieved the strongest performance with a mean weighted F1-score of 0.72, outperforming the gradient-boosting models (LightGBM and XGBoost around 0.66--0.67) and CatBoost (0.62). The MLP performed comparably to the boosting methods. These results suggest that carefully engineered motion descriptors can provide strong discriminative power without requiring deep architectures.
+\textbf{SVM achieved the strongest performance with weighted F1-score of 0.72}, outperforming the gradient-boosting models (LightGBM and XGBoost around 0.66--0.67) and CatBoost (0.62). MLP performed comparably to the boosting methods. These results suggest that carefully engineered motion descriptors can provide strong discriminative power without requiring deep architectures.
 
 \section{Method 2: Deep Learning with Raw Data}
 
-This approach trains transformer encoders directly on raw radar and infrared streams from all three RF-Behavior campaigns, avoiding manual feature engineering. Radar point clouds are resampled to a data-driven optimal rate of 18.7~FPS, balancing temporal frame count against spatial point density per frame.
+\textbf{This approach trains transformer encoders directly on raw radar and infrared streams from all three RF-Behavior campaigns.} Radar point clouds are resampled to a data-driven optimal rate of 18.7~FPS, balancing temporal frame count against spatial point density per frame.
 
 The architecture (Figure~1) uses a Point Cloud Encoder (a BERT-style self-attention block, without positional encoding for radar) to condense spatial points into a single per-frame vector, followed by a Temporal Encoder (a LLaMA-style causal decoder with rotary embeddings) that condenses the frame sequence into a single recording-level embedding. For infrared data, an optional convolutional downsampling block can further compress the temporal axis.
 
@@ -164,16 +167,20 @@ C1+C2+C3 & 25-6-6 & IR & 85,184  & 75.41\% & 7 \\
 \end{table}
 
 \section{Method 3: Neural Interpolation \& Classification}
+\textbf{Due to the irregular, asynchronus nature of sensor observations, we attempt interpolation using Deep Learning techniques by employing a Neural Controlled Differential Equation (NCDE) to interpolate and classify the sequences.} This method is compared against 1D U-net and Temporal Convlutional Network (TCN) and cubic spline which serves as a baseline.
 
-Because the 13 radar sensors report at irregular, asynchronous timestamps, this method jointly learns to interpolate the sensor streams onto a common timeline and classify the resulting sequence into one of the six emotion classes.
-
-Sequences are built per user/emotion by concatenating all 13 radars' XYZ values (39 features), with 10--30\% of each sequence randomly withheld as interpolation targets. Three interpolation/classification models are compared against a cubic-spline-plus-ridge baseline: a Neural Controlled Differential Equation (NCDE) model, a 1D U-Net, and a Temporal Convolutional Network (TCN). The NCDE integrates a differentiable Hermite-spline control signal to obtain a continuously updating hidden state, in contrast to the discrete updates of RNNs.
-
+The workflow is as follows:
+\begin{enumerate}
+\item Randomly masked observations serve as interpolation target.
+\item NCDE requires continuous input, done using hermite cubic spline interpolation.
+\item \textbf{NCDE has continuous hidden state, allowing retrieval at any point.}
+\item hidden state is fed into an MLP to obtain predicted value at timestamp, another to classify sequence.
+\end{enumerate}
 \vskip1ex
 \begin{figure}
 \centering
 \includegraphics[width=0.99\columnwidth]{haider_workflow.pdf}
-\caption{Workflow of the NCDE-based interpolation and classification pipeline: the sparse input sequence is converted to a continuous Hermite-spline control signal, integrated to obtain hidden states, then decoded for value reconstruction and classified for emotion probabilities.}
+\caption{Workflow of the NCDE-based interpolation and classification pipeline.}
 \end{figure}
 \vskip2ex
 
@@ -199,27 +206,12 @@ TCN + Baseline & 0.1039 & 1.650 & 33.33 \\
 \end{tabular}
 \caption{Interpolation and classification results.}
 \end{table}
+Despite NCDE having cubic spline interpolated input , it failed to surpass the baseline, this suggests the problem lies in the data.
 \section{Summary and Conclusions}
 
-Across all three methodologies, radar sensing shows clear promise for privacy-preserving sentiment recognition, though performance on subtle emotional states remains behind that on simpler, more repetitive behaviors, and behind infrared-based approaches. Feature-based SVM classification proved the most robust and data-efficient approach on the emotion classes studied. Deep learning on raw data generalizes well to unseen behaviors in the unsupervised setting but degrades on fine-grained emotion recognition. Joint interpolation-classification remains constrained by limited data.
+Across all three methodologies, radar sensing shows clear promise for privacy-preserving sentiment recognition, though performance on subtle emotional states remains behind that on simpler, more repetitive behaviors, and behind infrared-based approaches. Feature-based SVM classification proved the most robust and data-efficient approach on the emotion classes studied. Deep learning on raw data generalizes well to unseen behaviors in the unsupervised setting but degrades on fine-grained emotion recognition. Joint interpolation-classification remains constrained by limited data and fails to improve on baseline.
 
-Promising future directions include multimodal fusion of radar with infrared, data augmentation (sensor dropout, noise injection, geometric transforms), architectures tailored to point-cloud and irregular-time-series structure, and aligning learned sensor representations with text encoders to enable zero-shot recognition of new behaviors.
-
-\subsection{References}
-
-\begin{thebibliography}{99}
-
-\bibitem{zuo2025} S.~Zuo, Y.~Song, S.~Golipoor, Y.~Liu, X.~Ma, S.~Sigg, RF-Behavior: A multimodal radio-frequency dataset for human behavior and emotion analysis, 2025.
-
-\bibitem{chen2020} T.~Chen, S.~Kornblith, M.~Norouzi, G.~Hinton, A simple framework for contrastive learning of visual representations, \textit{ICML}, 2020.
-
-\bibitem{radford2021} A.~Radford et al., Learning transferable visual models from natural language supervision, \textit{ICML}, 2021.
-
-\bibitem{vaswani2017} A.~Vaswani et al., Attention is all you need, \textit{NeurIPS}, 2017.
-
-\bibitem{kidger2020} P.~Kidger, J.~Morrill, J.~Foster, T.~Lyons, Neural controlled differential equations for irregular time series, \textit{NeurIPS}, 2020.
-
-\end{thebibliography}
+\textbf{Promising future directions include multimodal fusion of sensors, architectures tailored to point-cloud and irregular-time-series structure, and aligning learned sensor representations with text encoders to enable zero-shot recognition of new behaviors.}
 
 \end{multicols}
 
